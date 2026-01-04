@@ -3,6 +3,10 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.authtoken.models import Token
+from rest_framework.permissions import IsAuthenticated
+from django.contrib.auth.tokens import default_token_generator
+from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
+from django.utils.encoding import force_bytes, force_str
 
 from rest_framework.response import Response
 from rest_framework import status
@@ -10,7 +14,7 @@ from rest_framework.decorators import api_view
 from django.contrib.auth import authenticate
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from accounts.serializers import UserSerializer, LoginSerializer
+from accounts.serializers import UserSerializer, LoginSerializer, ForgotPasswordSerializer, ResetPasswordSerializer
 from accounts.models import Profile, Organization, OrganizationMember
 from accounts.senduseremail import SendUserEmail
 from accounts.messages import get_response_messages
@@ -210,7 +214,7 @@ class LoginView(APIView):
         user = User.objects.filter(email__iexact=email).first()
         if not user:
             return Response(
-                {'error': MESSAGES.get('chat.user-not-found')},
+                {'error': MESSAGES.get('sign-in.user-not-found')},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -242,3 +246,66 @@ class LoginView(APIView):
             },
             status=status.HTTP_200_OK,
         )
+
+
+
+
+class UserMeView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        return Response({
+            "id": user.id,
+            "email": user.email,
+            "name": user.get_full_name()
+        })
+
+
+
+
+class ForgotPasswordView(APIView):
+    def post(self, request):
+        serializer = ForgotPasswordSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response({'error': serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+
+        email = serializer.validated_data['email']
+        user = User.objects.filter(email__iexact=email).first()
+
+        if user:
+            token = default_token_generator.make_token(user)
+            uid = urlsafe_base64_encode(force_bytes(user.pk))
+            
+            # Send email
+            SendUserEmail(
+                to_email=user.email,
+                email_type='auth:Forgot',
+                token=f"{uid}/{token}",
+                username=user.get_full_name()
+            )
+
+        # Always return success to prevent email enumeration
+        return Response(
+            {'message': MESSAGES.get('forgot-password.password-reset-email')},
+            status=status.HTTP_200_OK
+        )
+
+
+class ResetPasswordView(APIView):
+    def post(self, request, uidb64, token):
+        serializer = ResetPasswordSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response({'error': serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            uid = force_str(urlsafe_base64_decode(uidb64))
+            user = User.objects.get(pk=uid)
+        except (TypeError, ValueError, OverflowError, User.DoesNotExist):
+            return Response({'error': 'Invalid link'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not default_token_generator.check_token(user, token):
+            return Response({'error': 'Invalid or expired token'}, status=status.HTTP_400_BAD_REQUEST)
+
+        serializer.save(user)
+        return Response({'message': 'Password has been reset successfully'}, status=status.HTTP_200_OK)
