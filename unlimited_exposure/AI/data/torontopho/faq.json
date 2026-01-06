@@ -1,0 +1,102 @@
+[
+    {
+        "questions": [
+            "What are your hours?",
+            "When are you open?",
+            "Can you tell me your business hours?",
+            "What time do you open and close?",
+            "What are the opening hours?"
+        ],
+        "answer": "Our hours vary by location. Please specify a location for details."
+    },
+    {
+        "questions": [
+            "Where are you located?",
+            "What is your address?",
+            "Can you give me your location?",
+            "Where can I find you?",
+            "What is your location address?"
+        ],
+        "answer": "We have locations in Orillia, Dufferin, Jane, Hamilton, and Woodbridge. Please specify for details."
+    },
+    {
+        "questions": [
+            "What is your phone number?",
+            "How can I contact you?",
+            "Can I have your contact number?",
+            "What is the phone number for your restaurant?",
+            "How do I reach you by phone?"
+        ],
+        "answer": "Our contact number varies by location. Please specify a location for the correct number."
+    },
+    {
+        "questions": [
+            "Do you offer vegan options?",
+            "Are there vegetarian dishes on your menu?",
+            "Do you have plant-based meals?",
+            "What vegan options do you have?",
+            "Can I find vegetarian food at your restaurant?"
+        ],
+        "answer": "Yes, we offer vegan and vegetarian options at all locations."
+    },
+    {
+        "questions": [
+            "Can I order online?",
+            "How do I place an order online?",
+            "Do you offer online ordering?",
+            "Can I order food from your website?",
+            "Is online ordering available?"
+        ],
+        "answer": "Yes, you can order online through our website. Please select a location first."
+    },
+    {
+        "questions": [
+            "What is Pho Tai?",
+            "Can you tell me about Pho Tai?",
+            "What are the ingredients in Pho Tai?",
+            "How is Pho Tai made?",
+            "What does Pho Tai consist of?"
+        ],
+        "answer": "Pho Tai is made with rare beef, rice noodles, and a flavorful broth. Ingredients may vary by location."
+    },
+    {
+        "questions": [
+            "Do you have bubble tea?",
+            "What bubble tea flavors do you offer?",
+            "Can I get bubble tea at your restaurant?",
+            "What types of bubble tea are available?",
+            "Is bubble tea on your menu?"
+        ],
+        "answer": "Yes, we offer a variety of bubble tea flavors. Please select a location for specific options."
+    },
+    {
+        "questions": [
+            "What is your most popular dish?",
+            "Can you recommend a dish?",
+            "What do people usually order?",
+            "What is your signature dish?",
+            "What is the best dish on your menu?"
+        ],
+        "answer": "Our signature Pho is a popular choice. Please select a location for more recommendations."
+    },
+    {
+        "questions": [
+            "Do you have gluten-free options?",
+            "Are there gluten-free dishes available?",
+            "Can I find gluten-free food at your restaurant?",
+            "What gluten-free options do you offer?",
+            "Is your menu gluten-free friendly?"
+        ],
+        "answer": "Yes, we offer gluten-free options. Please specify a location for details."
+    },
+    {
+        "questions": [
+            "What is your environmental policy?",
+            "Do you use sustainable packaging?",
+            "How do you reduce your carbon footprint?",
+            "Are you an eco-friendly restaurant?",
+            "What are your sustainability practices?"
+        ],
+        "answer": "We use biodegradable packaging for all takeout orders to reduce our carbon impact."
+    }
+]
