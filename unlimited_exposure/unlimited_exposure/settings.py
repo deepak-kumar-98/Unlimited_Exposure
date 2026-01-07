@@ -24,6 +24,8 @@ load_dotenv()
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+MEDIA_URL = "/media/"
+MEDIA_ROOT = BASE_DIR / "media"
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/4.2/howto/deployment/checklist/
@@ -56,6 +58,7 @@ INSTALLED_APPS = [
     "rest_framework.authtoken",
     "accounts",
     "rest_framework_simplejwt",
+    "project",
 ]
 
 MIDDLEWARE = [
@@ -187,11 +190,11 @@ CHAT_MODEL = os.getenv("CHAT_MODEL", "gpt-4o")
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
 
 # Vector Database (Postgres) - Separate from Django's default DB
-POSTGRES_HOST = os.getenv("POSTGRES_HOST", "localhost")
+POSTGRES_HOST = os.getenv("POSTGRES_HOST", "postgres")
 POSTGRES_PORT = os.getenv("POSTGRES_PORT", "5432")
-POSTGRES_DB_NAME = os.getenv("POSTGRES_DB", "vectordb")
-POSTGRES_USER = os.getenv("POSTGRES_USER", "user")
-POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "password")
+POSTGRES_DB_NAME = os.getenv("POSTGRES_DB", "vector_db")
+POSTGRES_USER = os.getenv("POSTGRES_USER", "postgres")
+POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "postgres")
 
 # AI Logic Thresholds
 FAQ_SIMILARITY_THRESHOLD = 0.8

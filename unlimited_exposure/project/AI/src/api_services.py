@@ -29,14 +29,11 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 # from config import settings
 from pypdf import PdfReader
 from docx import Document
-from llm_gateway import UnifiedLLMClient
-from vector_store import VectorStore
+from .llm_gateway import UnifiedLLMClient
+from .vector_store import VectorStore
 
 # Robust import for WebScraper
-try:
-    from webscraper import WebScraper
-except ImportError:
-    from webscrapper import WebScraper
+from .webscraper import WebScraper
 
 # Initialize singletons to reuse connections
 # In Django, these might be initialized in apps.py ready() to persist across requests
@@ -66,6 +63,7 @@ def extract_text_from_file(file_path: str) -> str:
                 text = f.read()
         
         elif ext == '.pdf':
+            print(f"📄 Extracting PDF: {file_path}-----------------------")
             reader = PdfReader(file_path)
             for page in reader.pages:
                 page_text = page.extract_text()

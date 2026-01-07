@@ -74,7 +74,7 @@ def chunk_text(text, chunk_size=2000):
     if not text: return []
     return [text[i:i+chunk_size] for i in range(0, len(text), chunk_size)]
 
-def run_pipeline():
+def run_pipeline(): #pass name as an argument
     print("🚀 Starting Backend Setup Pipeline (Multi-Client)...")
     
     # 1. CLIENT ID INPUT
@@ -95,7 +95,7 @@ def run_pipeline():
     priority_content = ""
 
     # 2. FILE INGESTION (Batch)
-    target_folder = input("Enter path to raw documents folder (or press Enter to skip): ").strip()
+    target_folder = input("Enter path to raw documents folder (or press Enter to skip): ").strip()# add base path/dir
     if target_folder and os.path.exists(target_folder):
         files = glob.glob(os.path.join(target_folder, "*.*"))
         print(f"📂 Found {len(files)} files.")

@@ -1,0 +1,43 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: postgres-exposure_chatbot
+    restart: always
+    hostname: postgres
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_USER=${DATABASE_USER}
+      - POSTGRES_PASSWORD=${DATABASE_PASSWORD}
+      - Listen_Address=*
+    ports:
+      - ${DATABASE_PORT}:5432
+    networks:
+      - internal
+    env_file:
+      - .env
+
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: pgadmin-exposure_chatbot
+    restart: always
+    depends_on:
+      - postgres
+    ports:
+      - ${PGADMIN_DEFAULT_PORT}:80
+      ## you can change pgAdmin default username/password with below environment variables
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD}
+    networks:
+      - internal
+    env_file:
+      - .env
+
+volumes:
+  db_data:
+
+
+networks:
+  internal:
+    driver: bridge
