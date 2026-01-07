@@ -1,7 +1,27 @@
+#-----------------------------------------------
+import sys
+import os
+import django
+
+# 1. Add Project Root to Path (Go up 3 levels from src/file.py to root)
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../')))
+
+# 2. Point to your Django Settings
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "unlimited_exposure.settings")
+
+# 3. Import Settings (Django will auto-load now)
+from django.conf import settings
+
+# 4. Boot Django
+if not settings.configured:
+    django.setup()
+#---------------------------------------
+
 import psycopg2
 from psycopg2.extras import execute_values
-from config import settings
+# from config import settings
 from src.llm_gateway import UnifiedLLMClient
+
 
 class VectorStore:
     def __init__(self):

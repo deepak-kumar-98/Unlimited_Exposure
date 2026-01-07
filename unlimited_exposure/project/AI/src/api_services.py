@@ -3,11 +3,30 @@ import sys
 import csv
 from typing import List, Dict, Optional
 
+#--------------------------
+import sys
+import os
+import django
+
+# 1. Add Project Root to Path (Go up 3 levels from src/file.py to root)
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../')))
+
+# 2. Point to your Django Settings
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "unlimited_exposure.settings")
+
+# 3. Import Settings (Django will auto-load now)
+from django.conf import settings
+
+# 4. Boot Django
+if not settings.configured:
+    django.setup()
+#---------------------------------
+
 # Add parent directory to path so we can import config and other modules
 # In a Django project, he might replace this with standard Django absolute imports
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from config import settings
+# from config import settings
 from pypdf import PdfReader
 from docx import Document
 from llm_gateway import UnifiedLLMClient
