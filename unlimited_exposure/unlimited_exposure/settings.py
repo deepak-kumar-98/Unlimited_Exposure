@@ -13,6 +13,14 @@ https://docs.djangoproject.com/en/4.2/ref/settings/
 from datetime import timedelta
 from pathlib import Path
 
+from datetime import timedelta
+from pathlib import Path
+import os
+from dotenv import load_dotenv # Make sure to pip install python-dotenv
+
+# Load environment variables
+load_dotenv()
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -162,3 +170,34 @@ EMAIL_HOST_PASSWORD = "sylh rcms mcae pljp"
 DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
 
 FRONTEND_URL = "http://localhost:5173/"
+
+
+# ==============================================
+# AI & CHATBOT CONFIGURATION
+# ==============================================
+
+# API Keys & Providers
+API_PROVIDER = os.getenv("API_PROVIDER", "openai").lower()
+API_KEY = os.getenv("API_KEY", "")
+BASE_URL = os.getenv("BASE_URL", None)
+FIRECRAWL_API_KEY = os.getenv("FIRECRAWL_API_KEY", "")
+
+# Models
+CHAT_MODEL = os.getenv("CHAT_MODEL", "gpt-4o")
+EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
+
+# Vector Database (Postgres) - Separate from Django's default DB
+POSTGRES_HOST = os.getenv("POSTGRES_HOST", "localhost")
+POSTGRES_PORT = os.getenv("POSTGRES_PORT", "5432")
+POSTGRES_DB_NAME = os.getenv("POSTGRES_DB", "vectordb")
+POSTGRES_USER = os.getenv("POSTGRES_USER", "user")
+POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "password")
+
+# AI Logic Thresholds
+FAQ_SIMILARITY_THRESHOLD = 0.8
+MAX_HISTORY_TURNS = 4
+
+# Paths
+# We use BASE_DIR to make sure the path works on any machine
+DATA_DIR = BASE_DIR / "data"
+FAQ_FILE_PATH = DATA_DIR / "faq.json"
