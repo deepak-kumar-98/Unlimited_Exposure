@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hybrid Bot Interface</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; background-color: #f0f2f5; display: flex; justify-content: center; height: 100vh; margin: 0; }
+        .chat-container { width: 400px; background: white; box-shadow: 0 4px 10px rgba(0,0,0,0.1); display: flex; flex-direction: column; height: 90vh; margin-top: 5vh; border-radius: 12px; overflow: hidden; }
+        .header { background: #008069; color: white; padding: 15px; font-weight: bold; display: flex; justify-content: space-between; align-items: center; }
+        .status-dot { height: 10px; width: 10px; background-color: #00ff00; border-radius: 50%; display: inline-block; }
+        .chat-box { flex: 1; padding: 20px; overflow-y: auto; background: #e5ddd5; display: flex; flex-direction: column; gap: 10px; }
+        .message { max-width: 80%; padding: 10px 15px; border-radius: 10px; font-size: 14px; line-height: 1.4; }
+        .user-msg { align-self: flex-end; background: #dcf8c6; color: #333; border-bottom-right-radius: 0; }
+        .bot-msg { align-self: flex-start; background: white; color: #333; border-bottom-left-radius: 0; position: relative; }
+        .meta-info { font-size: 10px; color: #888; margin-top: 5px; text-align: right; }
+        .input-area { padding: 15px; background: #f0f0f0; display: flex; gap: 10px; border-top: 1px solid #ddd; }
+        input { flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 20px; outline: none; }
+        button { background: #008069; color: white; border: none; padding: 10px 20px; border-radius: 20px; cursor: pointer; font-weight: bold; }
+        button:hover { background: #006b5f; }
+        button:disabled { background: #ccc; }
+        .client-badge { font-size: 10px; background: rgba(255,255,255,0.2); padding: 2px 6px; border-radius: 4px; margin-left: 8px; }
+        .error-msg { background-color: #ffcccc; color: #cc0000; padding: 10px; font-size: 12px; text-align: center; }
+    </style>
+</head>
+<body>
+
+<div class="chat-container">
+    <div class="header">
+        <div>
+            Bot <span id="client-display" class="client-badge">Loading...</span>
+        </div>
+        <div style="font-size: 12px; font-weight: normal; display: flex; align-items: center; gap: 5px;">
+            <span class="status-dot"></span> Online
+        </div>
+    </div>
+    <div class="chat-box" id="chat-box">
+        <div class="message bot-msg">
+            Hello! How can I help you today?
+        </div>
+    </div>
+    <div class="input-area">
+        <input type="text" id="user-input" placeholder="Type a message..." onkeypress="handleEnter(event)">
+        <button onclick="sendMessage()" id="send-btn">Send</button>
+    </div>
+</div>
+
+<script>
+    // 1. Get Client ID from URL (e.g., index.html?client_id=client_001)
+    const urlParams = new URLSearchParams(window.location.search);
+    // Default to 'client_001' if not provided for easier testing
+    const clientId = urlParams.get('client_id') || 'client_001'; 
+    
+    document.getElementById('client-display').innerText = clientId;
+
+    // 2. Maintain Local History State
+    let chatHistory = [];
+
+    async function sendMessage() {
+        const input = document.getElementById("user-input");
+        const chatBox = document.getElementById("chat-box");
+        const btn = document.getElementById("send-btn");
+        const text = input.value.trim();
+
+        if (!text) return;
+
+        // Add User Message to UI
+        appendMessage(text, "user-msg");
+        input.value = "";
+        btn.disabled = true;
+
+        // Add to History
+        chatHistory.push({ "role": "user", "content": text });
+
+        // Add Loading Placeholder
+        const loadingId = "loading-" + Date.now();
+        appendMessage("Thinking...", "bot-msg", loadingId);
+
+        try {
+            const response = await fetch("http://localhost:8085/chat", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ 
+                    text: text,
+                    client_id: clientId,
+                    history: chatHistory 
+                })
+            });
+
+            if (!response.ok) {
+                const errData = await response.json();
+                throw new Error(errData.detail || "Server Error");
+            }
+
+            const data = await response.json();
+            
+            // Remove loading
+            const loader = document.getElementById(loadingId);
+            if(loader) loader.remove();
+
+            // Add Bot Message to UI
+            appendMessage(data.response, "bot-msg");
+
+            // Add to History
+            chatHistory.push({ "role": "assistant", "content": data.response });
+
+        } catch (error) {
+            console.error(error);
+            const loader = document.getElementById(loadingId);
+            if(loader) {
+                loader.innerText = "Error: " + error.message;
+                loader.style.color = "red";
+            }
+        }
+
+        btn.disabled = false;
+        chatBox.scrollTop = chatBox.scrollHeight;
+    }
+
+    function appendMessage(text, className, id = null) {
+        const chatBox = document.getElementById("chat-box");
+        const div = document.createElement("div");
+        div.className = `message ${className}`;
+        if (id) div.id = id;
+        div.innerText = text;
+        chatBox.appendChild(div);
+        chatBox.scrollTop = chatBox.scrollHeight;
+    }
+
+    function handleEnter(e) {
+        if (e.key === "Enter") sendMessage();
+    }
+</script>
+
+</body>
+</html>
