@@ -3,38 +3,30 @@ import glob
 import json
 import sys
 import csv
-
-import sys
-import os
 import django
 
-# 1. Add Project Root to Path (Go up 3 levels from src/file.py to root)
+# --- DJANGO SETUP BLOCK ---
+# 1. Add Project Root to Path (Go up 3 levels from src/setup_pipeline.py)
+# Structure: .../unlimited_exposure/project/AI/src/setup_pipeline.py -> ../../../ -> root
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../')))
 
-# 2. Point to your Django Settings
+# 2. Set Django settings module
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "unlimited_exposure.settings")
 
-# 3. Import Settings (Django will auto-load now)
 from django.conf import settings
 
-# 4. Boot Django
+# 3. Initialize Django if not already done
 if not settings.configured:
     django.setup()
 
-#------------------------------------------
-
-# Path fix
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
-# from config import settings
 from pypdf import PdfReader
 from docx import Document
-from src.llm_gateway import UnifiedLLMClient
-from src.vector_store import VectorStore
+from llm_gateway import UnifiedLLMClient
+from vector_store import VectorStore
 
 # Handle typo in filename from previous iterations
 try:
-    from src.webscraper import WebScraper
+    from webscraper import WebScraper
 except ImportError:
     from webscrapper import WebScraper
 
@@ -44,26 +36,20 @@ def extract_text_from_file(filepath):
     try:
         if ext in ['.txt', '.md']:
             with open(filepath, 'r', encoding='utf-8') as f: text = f.read()
-        
         elif ext == '.pdf':
             reader = PdfReader(filepath)
             for page in reader.pages: 
                 page_text = page.extract_text()
-                if page_text:
-                    text += page_text + "\n"
-        
+                if page_text: text += page_text + "\n"
         elif ext == '.docx':
             doc = Document(filepath)
-            for para in doc.paragraphs: 
-                text += para.text + "\n"
-        
+            for para in doc.paragraphs: text += para.text + "\n"
         elif ext == '.csv':
             with open(filepath, 'r', encoding='utf-8') as f:
                 reader = csv.reader(f)
                 for row in reader:
-                    clean_row = [cell.strip() for cell in row if cell.strip()]
-                    if clean_row:
-                        text += ", ".join(clean_row) + "\n"
+                    clean = [c.strip() for c in row if c.strip()]
+                    if clean: text += ", ".join(clean) + "\n"
 
         return f"\n--- SOURCE FILE: {os.path.basename(filepath)} ---\n{text}"
     except Exception as e:
@@ -91,40 +77,36 @@ def run_pipeline(): #pass name as an argument
         print(f"❌ Initialization Failed: {e}")
         return
     
-    all_chunks = []
-    priority_content = ""
-
-    # 2. FILE INGESTION (Batch)
-    target_folder = input("Enter path to raw documents folder (or press Enter to skip): ").strip()# add base path/dir
+    # Structure: list of (text_chunk, source_id)
+    all_chunks_with_meta = []
+    
+    # 2. FILE INGESTION
+    target_folder = input("Enter path to raw documents folder (or press Enter to skip): ").strip()
     if target_folder and os.path.exists(target_folder):
         files = glob.glob(os.path.join(target_folder, "*.*"))
         print(f"📂 Found {len(files)} files.")
         for file in files:
             raw_text = extract_text_from_file(file)
+            doc_id = os.path.basename(file)
             if raw_text.strip():
                 chunks = chunk_text(raw_text)
-                all_chunks.extend(chunks)
-                print(f"   - Processed: {os.path.basename(file)} ({len(chunks)} chunks)")
+                # Attach Doc ID to every chunk
+                sourced_chunks = [(c, doc_id) for c in chunks]
+                all_chunks_with_meta.extend(sourced_chunks)
+                print(f"   - Processed: {doc_id} ({len(chunks)} chunks)")
             else:
-                print(f"   - Skipped (Empty/Unsupported): {os.path.basename(file)}")
+                print(f"   - Skipped: {doc_id}")
 
-    # 3. PRIORITY FILE INGESTION (New Feature)
-    # This allows the client to provide a specific file that guides the generation or adds critical info
-    priority_file = input("Enter path to a PRIORITY info file (Optional, e.g., guidelines.txt): ").strip()
-    if priority_file:
-        if os.path.exists(priority_file):
-            raw_text = extract_text_from_file(priority_file)
-            if raw_text.strip():
-                # Store separately to prepend to LLM context later
-                priority_content = raw_text
-                # Also add to DB for RAG
-                chunks = chunk_text(raw_text)
-                all_chunks.extend(chunks)
-                print(f"   - ⭐ Processed Priority File: {os.path.basename(priority_file)}")
-            else:
-                print("   - Priority file was empty or unsupported.")
-        else:
-            print(f"   - File not found: {priority_file}")
+    # 3. PRIORITY FILE
+    priority_file = input("Enter path to a PRIORITY info file (Optional): ").strip()
+    if priority_file and os.path.exists(priority_file):
+        raw_text = extract_text_from_file(priority_file)
+        doc_id = os.path.basename(priority_file)
+        if raw_text.strip():
+            chunks = chunk_text(raw_text)
+            sourced_chunks = [(c, doc_id) for c in chunks]
+            all_chunks_with_meta.extend(sourced_chunks)
+            print(f"   - ⭐ Processed Priority File: {doc_id}")
 
     # 4. WEB SCRAPING
     scrape_input = input("Enter website URL to scrape (or press Enter to skip): ").strip()
@@ -132,13 +114,16 @@ def run_pipeline(): #pass name as an argument
         web_text = scraper.scrape_page(scrape_input)
         if web_text:
             web_chunks = chunk_text(web_text)
-            all_chunks.extend(web_chunks)
+            # Use URL as document ID
+            sourced_chunks = [(c, scrape_input) for c in web_chunks]
+            all_chunks_with_meta.extend(sourced_chunks)
             print(f"   - Processed website: {scrape_input}")
 
-    # 5. SAVE TO DB
-    if all_chunks:
-        print(f"\n💾 Saving {len(all_chunks)} chunks for client '{client_id}'...")
-        db.add_documents(client_id, all_chunks)
+    # 5. SAVE TO DB (Updated Signature)
+    if all_chunks_with_meta:
+        print(f"\n💾 Saving {len(all_chunks_with_meta)} chunks for client '{client_id}'...")
+        # Note: Now passing list of tuples
+        db.add_documents(client_id, all_chunks_with_meta)
         print("✅ Data stored in Vector DB.")
     else:
         print("⚠️ No content found. Skipping DB save.")
@@ -151,19 +136,13 @@ def run_pipeline(): #pass name as an argument
         print("❌ Database empty for this client.")
         return
 
-    # Construct Context: Put Priority content FIRST
-    # We allow up to 450k chars. We ensure priority content is at the top.
-    combined_knowledge = f"--- PRIORITY INFORMATION ---\n{priority_content}\n\n--- GENERAL KNOWLEDGE BASE ---\n{full_knowledge}"
-    context_slice = combined_knowledge[:450000]
+    context_slice = full_knowledge[:450000]
 
     print("🧠 Generating FAQ.json via LLM...")
     
     system_prompt = """
     You are an expert customer support architect.
-    Generate a robust FAQ database in strict JSON format. It should have 5 to 8 question variations for each answer. Try to gennerate as faqs as possible.
-    
-    Pay special attention to the 'PRIORITY INFORMATION' section if present.
-    
+    Generate a robust FAQ database in strict JSON format.
     Format: {"faqs": [{"questions": ["..."], "answer": "..."}]}
     """
     
@@ -175,7 +154,7 @@ def run_pipeline(): #pass name as an argument
     )
     
     if not response:
-        print("❌ Failed to generate text from LLM. Please check API keys and logs.")
+        print("❌ Failed to generate text from LLM.")
         return
 
     try:
@@ -189,7 +168,6 @@ def run_pipeline(): #pass name as an argument
         else:
             faq_data = list(json_output.values())[0] if json_output else []
 
-        # SAVE TO CLIENT SPECIFIC FOLDER
         data_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', client_id)
         os.makedirs(data_dir, exist_ok=True)
         output_path = os.path.join(data_dir, "faq.json")
