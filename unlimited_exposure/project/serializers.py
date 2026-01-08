@@ -2,6 +2,7 @@
 
 from rest_framework import serializers
 from .models import IngestedContent
+from .models import ChatSession, ChatMessage
 
 class IngestedContentSerializer(serializers.ModelSerializer):
     uploaded_by = serializers.StringRelatedField(read_only=True)
@@ -47,3 +48,24 @@ class IngestRequestSerializer(serializers.Serializer):
                 "Provide at least one file or one URL."
             )
         return data
+
+
+class ChatMessageSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ChatMessage
+        fields = ["id", "role", "content", "created_at"]
+
+
+class ChatSessionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ChatSession
+        fields = ["id", "title", "created_at", "updated_at"]
+
+
+class ChatSessionDetailSerializer(serializers.ModelSerializer):
+    messages = ChatMessageSerializer(many=True)
+
+    class Meta:
+        model = ChatSession
+        fields = ["id", "title", "messages", "created_at"]
+
