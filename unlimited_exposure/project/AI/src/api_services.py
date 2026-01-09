@@ -16,8 +16,8 @@ except Exception:
     django.setup()
     from django.conf import settings
 
-from .pypdf import PdfReader
-from .docx import Document
+from pypdf import PdfReader
+from docx import Document
 from .llm_gateway import UnifiedLLMClient
 from .vector_store import VectorStore
 
@@ -111,7 +111,7 @@ def generate_rag_response(
 ) -> str:
     
     # 1. Retrieve
-    retrieved_docs = vector_db.search(client_id, user_query, limit=5)
+    retrieved_docs = vector_db.search(client_id, user_query, limit=10)
     if not retrieved_docs:
         return "I apologize, but I don't have enough information."
 
