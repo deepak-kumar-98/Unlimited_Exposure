@@ -6,10 +6,11 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.exceptions import NotFound, PermissionDenied
+from django.db.models import Q
 
 
 from .models import ChatSession, ChatMessage, SystemSettings, Organization
-from .serializers import ChatSessionDetailSerializer, ChatSessionSerializer, SystemSettingsCreateSerializer, ChatMessageSerializer
+from .serializers import ChatSessionDetailSerializer, ChatSessionSerializer, SystemSettingsCreateSerializer, SystemSettingsSerializer, ChatMessageSerializer
 
 from .models import IngestedContent
 from .serializers import (
@@ -212,9 +213,100 @@ class ChatListAPIView(ListAPIView):
         ).order_by("-updated_at")
 
 
+class KnowledgeBaseAPIView(ListAPIView):
+    """
+    Get all ingested content (knowledge base) for the user's organization.
+    """
+    serializer_class = IngestedContentSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        try:
+            profile = self.request.user.profile
+        except Profile.DoesNotExist:
+            raise PermissionDenied("Profile not found")
+        
+        user_organization = profile.organization
+        
+        # Return all ingested content for the user's organization
+        # Handle both cases: organization is set OR uploaded_by is the user (for backward compatibility)
+        return IngestedContent.objects.filter(
+            Q(organization=user_organization) | Q(uploaded_by=profile)
+        ).order_by("-created_at")
+
+
 
 class CreateSystemSettingsAPIView(APIView):
     permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        """
+        Retrieve active system setting for an organization.
+        If organization_id is provided, returns active prompt for that organization.
+        If not provided, returns active global prompt (organization is null).
+        """
+        try:
+            profile = request.user.profile
+        except Profile.DoesNotExist:
+            return Response(
+                {"error": "Profile not found. Please complete account setup."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        # 🔹 Read organization_id from query params
+        organization_id = request.query_params.get("org_id")
+
+        organization = None
+        if organization_id:
+            try:
+                organization = Organization.objects.get(id=organization_id)
+                
+                # 🔒 Access control: User must be from the requested organization
+                if organization != profile.organization:
+                    return Response(
+                        {"error": "You do not have permission to access this organization's settings"},
+                        status=status.HTTP_403_FORBIDDEN
+                    )
+            except Organization.DoesNotExist:
+                return Response(
+                    {"error": "Invalid org_id"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+        # 🔹 Get active system setting for the organization (or global if org is None)
+        system_settings = (
+            SystemSettings.objects.filter(
+                organization=organization,
+                is_active=True
+            )
+            .order_by("-created_at")
+            .first()
+        )
+
+        if not system_settings:
+            # Return 404 with clear message if no active setting found
+            if organization:
+                return Response(
+                    {
+                        "error": "No active system setting found",
+                        "message": f"No active system prompt found for organization {organization.name}",
+                        "organization_id": str(organization.id)
+                    },
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            else:
+                return Response(
+                    {
+                        "error": "No active system setting found",
+                        "message": "No active global system prompt found"
+                    },
+                    status=status.HTTP_404_NOT_FOUND
+                )
+
+        return Response(
+            {"system_prompt": system_settings.system_prompt},
+            status=status.HTTP_200_OK
+        )
 
     def post(self, request):
         serializer = SystemSettingsCreateSerializer(data=request.data)
@@ -223,7 +315,7 @@ class CreateSystemSettingsAPIView(APIView):
         profile = request.user.profile
 
         # 🔹 Read organization_id from query params
-        organization_id = request.query_params.get("organization_id")
+        organization_id = request.query_params.get("org_id")
 
         organization = None
         if organization_id:
@@ -231,7 +323,7 @@ class CreateSystemSettingsAPIView(APIView):
                 organization = Organization.objects.get(id=organization_id)
             except Organization.DoesNotExist:
                 return Response(
-                    {"error": "Invalid organization_id"},
+                    {"error": "Invalid org_id"},
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
@@ -262,24 +354,27 @@ class CreateSystemSettingsAPIView(APIView):
 
 
 
-class ChatMessagesAPIView(ListAPIView):
-    serializer_class = ChatMessageSerializer
+class ChatMessagesAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def get_queryset(self):
-        chat_id = self.kwargs.get("chat_id")
-
+    def get(self, request, chat_id):
+        """
+        Retrieve a chat session with all its messages.
+        Returns chat session details including messages array.
+        """
         try:
-            profile = self.request.user.profile
+            profile = request.user.profile
         except Profile.DoesNotExist:
             raise PermissionDenied("Profile not found")
 
         try:
-            chat = ChatSession.objects.get(
+            chat = ChatSession.objects.prefetch_related('messages').get(
                 id=chat_id,
                 user=profile   # 🔒 prevents access to others' chats
             )
         except ChatSession.DoesNotExist:
             raise NotFound("Chat session not found")
 
-        return chat.messages.order_by("created_at")
+        # Use ChatSessionDetailSerializer to return the desired format
+        serializer = ChatSessionDetailSerializer(chat)
+        return Response(serializer.data, status=status.HTTP_200_OK)

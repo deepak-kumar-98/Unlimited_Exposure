@@ -86,8 +86,7 @@ class ChatSessionDetailSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = ChatSession
-        fields = ["id", "title", "messages", "created_at"]
-
+        fields = ["id", "title", "messages", "created_at", "updated_at"]
 
 
 class SystemSettingsCreateSerializer(serializers.ModelSerializer):
@@ -96,13 +95,20 @@ class SystemSettingsCreateSerializer(serializers.ModelSerializer):
         fields = ["system_prompt"]
 
 
-
-class ChatMessageSerializer(serializers.ModelSerializer):
+class SystemSettingsSerializer(serializers.ModelSerializer):
+    organization = serializers.SerializerMethodField()
+    
+    def get_organization(self, obj):
+        """Return organization ID if exists, otherwise None"""
+        return obj.organization.id if obj.organization else None
+    
     class Meta:
-        model = ChatMessage
+        model = SystemSettings
         fields = [
             "id",
-            "role",
-            "content",
-            "created_at"
+            "system_prompt",
+            "organization",
+            "is_active",
+            "created_at",
+            "updated_at"
         ]
