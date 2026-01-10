@@ -19,22 +19,53 @@ class PlansAndFeature(models.Model):
 
 
 
+# class Profile(models.Model):
+#     user = models.OneToOneField(User, on_delete=models.CASCADE)
+#     address = models.CharField(max_length=200, blank=True, null=True)
+#     billing_address = models.TextField(blank=True, null=True)
+#     profile_image_url = models.CharField(max_length=1000, blank=True, null=True)
+
+#     subscription = models.ForeignKey(
+#         PlansAndFeature, on_delete=models.DO_NOTHING, blank=True, null=True
+#     )
+
+#     created_organization = models.OneToOneField(
+#         "Organization",
+#         null=True,
+#         blank=True,
+#         on_delete=models.SET_NULL,
+#         related_name="creator_profile"
+#     )
+
+#     no_of_queries = models.PositiveIntegerField(default=0)
+#     no_of_content = models.PositiveIntegerField(default=0)
+#     no_of_projects = models.PositiveIntegerField(default=0)
+
+#     plan_expiry_at = models.DateTimeField(null=True, blank=True)
+#     plan_created_at = models.DateTimeField(auto_now_add=True)
+#     is_plan_expired = models.BooleanField(default=False)
+
+#     updated_at = models.DateTimeField(auto_now=True)
+
+#     def __str__(self):
+#         return self.user.email
+
+
 class Profile(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE)
+
+    organization = models.ForeignKey(
+        "Organization",
+        on_delete=models.CASCADE,
+        related_name="profiles"
+    )
+
     address = models.CharField(max_length=200, blank=True, null=True)
     billing_address = models.TextField(blank=True, null=True)
     profile_image_url = models.CharField(max_length=1000, blank=True, null=True)
 
     subscription = models.ForeignKey(
         PlansAndFeature, on_delete=models.DO_NOTHING, blank=True, null=True
-    )
-
-    created_organization = models.OneToOneField(
-        "Organization",
-        null=True,
-        blank=True,
-        on_delete=models.SET_NULL,
-        related_name="creator_profile"
     )
 
     no_of_queries = models.PositiveIntegerField(default=0)
@@ -60,14 +91,13 @@ class Organization(models.Model):
     owner = models.ForeignKey(
         "Profile",
         on_delete=models.CASCADE,
-        related_name="owned_organizations"
+        related_name="owned_organizations",
+        null=True,     # ✅ REQUIRED
+        blank=True
     )
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-
-    def __str__(self):
-        return self.name
 
 
 

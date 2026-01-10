@@ -131,21 +131,87 @@ class RegisterUser(APIView):
 #             )
 
 
+# class VerifyAccount(APIView):
+#     """
+#     Email verification:
+#     - Activate user
+#     - Create profile
+#     - Create organization
+#     - Assign OWNER role
+#     """
+
+#     def get(self, request):
+#         token_key = request.GET.get('token')
+
+#         if not token_key:
+#             return Response(
+#                 {'error': 'Token is required'},
+#                 status=status.HTTP_400_BAD_REQUEST,
+#             )
+
+#         try:
+#             token = Token.objects.get(key=token_key)
+#             user = token.user
+
+#             if user.is_active:
+#                 return Response(
+#                     {'error': MESSAGES.get('error.email-verified')},
+#                     status=status.HTTP_409_CONFLICT,
+#                 )
+
+#             # 1️⃣ Activate user
+#             user.is_active = True
+#             user.save()
+
+#             # 2️⃣ Create profile
+#             profile, _ = Profile.objects.get_or_create(user=user)
+
+#             # 3️⃣ Create organization (FIX HERE)
+#             organization, _ = Organization.objects.get_or_create(
+#                 owner=profile,  # ✅ FIXED
+#                 name=f"{user.first_name}'s Organization",
+#             )
+
+#             # 4️⃣ Assign OWNER role
+#             OrganizationMember.objects.get_or_create(
+#                 user=profile,
+#                 organization=organization,
+#                 email=user.email,
+#                 role=OrganizationMember.OWNER,
+#                 invitation_accepted=True,
+#             )
+
+#             # 5️⃣ Link profile → organization
+#             profile.created_organization = organization
+#             profile.save()
+
+#             return Response(
+#                 {'message': MESSAGES.get('success.email-verified')},
+#                 status=status.HTTP_200_OK,
+#             )
+
+#         except Token.DoesNotExist:
+#             return Response(
+#                 {'error': MESSAGES.get('verify-email.verification-link-expired')},
+#                 status=status.HTTP_404_NOT_FOUND,
+#             )
+
+
 class VerifyAccount(APIView):
     """
     Email verification:
     - Activate user
-    - Create profile
     - Create organization
+    - Create profile (linked to org)
     - Assign OWNER role
     """
 
     def get(self, request):
-        token_key = request.GET.get('token')
+        token_key = request.GET.get("token")
 
         if not token_key:
             return Response(
-                {'error': 'Token is required'},
+                {"error": "Token is required"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -155,7 +221,7 @@ class VerifyAccount(APIView):
 
             if user.is_active:
                 return Response(
-                    {'error': MESSAGES.get('error.email-verified')},
+                    {"error": MESSAGES.get("error.email-verified")},
                     status=status.HTTP_409_CONFLICT,
                 )
 
@@ -163,17 +229,23 @@ class VerifyAccount(APIView):
             user.is_active = True
             user.save()
 
-            # 2️⃣ Create profile
-            profile, _ = Profile.objects.get_or_create(user=user)
-
-            # 3️⃣ Create organization (FIX HERE)
-            organization, _ = Organization.objects.get_or_create(
-                owner=profile,  # ✅ FIXED
-                name=f"{user.first_name}'s Organization",
+            # 2️⃣ Create organization FIRST (owner temporarily NULL)
+            organization = Organization.objects.create(
+                name=f"{user.first_name or user.email}'s Organization"
             )
 
-            # 4️⃣ Assign OWNER role
-            OrganizationMember.objects.get_or_create(
+            # 3️⃣ Create profile linked to organization
+            profile = Profile.objects.create(
+                user=user,
+                organization=organization
+            )
+
+            # 4️⃣ Assign owner now that profile exists
+            organization.owner = profile
+            organization.save(update_fields=["owner"])
+
+            # 5️⃣ Assign OWNER role
+            OrganizationMember.objects.create(
                 user=profile,
                 organization=organization,
                 email=user.email,
@@ -181,18 +253,14 @@ class VerifyAccount(APIView):
                 invitation_accepted=True,
             )
 
-            # 5️⃣ Link profile → organization
-            profile.created_organization = organization
-            profile.save()
-
             return Response(
-                {'message': MESSAGES.get('success.email-verified')},
+                {"message": MESSAGES.get("success.email-verified")},
                 status=status.HTTP_200_OK,
             )
 
         except Token.DoesNotExist:
             return Response(
-                {'error': MESSAGES.get('verify-email.verification-link-expired')},
+                {"error": MESSAGES.get("verify-email.verification-link-expired")},
                 status=status.HTTP_404_NOT_FOUND,
             )
 
@@ -250,18 +318,33 @@ class LoginView(APIView):
 
 
 
+# class UserMeView(APIView):
+#     permission_classes = [IsAuthenticated]
+
+#     def get(self, request):
+#         user = request.user
+#         return Response({
+#             "id": user.id,
+#             "email": user.email,
+#             "name": user.get_full_name()
+#         })
+
 class UserMeView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        user = request.user
+        profile = request.user.profile
+        org = profile.organization
+
         return Response({
-            "id": user.id,
-            "email": user.email,
-            "name": user.get_full_name()
+            "id": request.user.id,
+            "email": request.user.email,
+            "name": request.user.get_full_name(),
+            "organization": {
+                "id": org.id,
+                "name": org.name
+            }
         })
-
-
 
 
 class ForgotPasswordView(APIView):

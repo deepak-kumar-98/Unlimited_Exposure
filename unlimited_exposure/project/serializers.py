@@ -2,7 +2,7 @@
 
 from rest_framework import serializers
 from .models import IngestedContent
-from .models import ChatSession, ChatMessage
+from .models import ChatSession, ChatMessage, SystemSettings
 
 class IngestedContentSerializer(serializers.ModelSerializer):
     uploaded_by = serializers.StringRelatedField(read_only=True)
@@ -31,6 +31,25 @@ class IngestedContentSerializer(serializers.ModelSerializer):
         ]
 
 
+# class IngestRequestSerializer(serializers.Serializer):
+#     files = serializers.ListField(
+#         child=serializers.FileField(),
+#         required=False
+#     )
+#     urls = serializers.ListField(
+#         child=serializers.URLField(),
+#         required=False
+#     )
+#     organization_id = serializers.UUIDField(required=False)
+
+#     def validate(self, data):
+#         if not data.get("files") and not data.get("urls"):
+#             raise serializers.ValidationError(
+#                 "Provide at least one file or one URL."
+#             )
+#         return data
+
+
 class IngestRequestSerializer(serializers.Serializer):
     files = serializers.ListField(
         child=serializers.FileField(),
@@ -40,7 +59,6 @@ class IngestRequestSerializer(serializers.Serializer):
         child=serializers.URLField(),
         required=False
     )
-    organization_id = serializers.UUIDField(required=False)
 
     def validate(self, data):
         if not data.get("files") and not data.get("urls"):
@@ -48,6 +66,7 @@ class IngestRequestSerializer(serializers.Serializer):
                 "Provide at least one file or one URL."
             )
         return data
+
 
 
 class ChatMessageSerializer(serializers.ModelSerializer):
@@ -69,3 +88,21 @@ class ChatSessionDetailSerializer(serializers.ModelSerializer):
         model = ChatSession
         fields = ["id", "title", "messages", "created_at"]
 
+
+
+class SystemSettingsCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SystemSettings
+        fields = ["system_prompt"]
+
+
+
+class ChatMessageSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ChatMessage
+        fields = [
+            "id",
+            "role",
+            "content",
+            "created_at"
+        ]

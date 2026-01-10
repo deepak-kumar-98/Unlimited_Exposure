@@ -90,12 +90,6 @@ class ChatSession(models.Model):
         return f"{self.title} ({self.user})"
 
 
-# apps/chat/models.py
-
-import uuid
-from django.db import models
-
-
 class ChatMessage(models.Model):
     USER = "user"
     ASSISTANT = "assistant"
@@ -127,3 +121,48 @@ class ChatMessage(models.Model):
 
     def __str__(self):
         return f"{self.role}: {self.content[:30]}"
+
+
+
+class SystemSettings(models.Model):
+    """
+    Stores system-level configuration for chat / RAG.
+    Currently supports only system_prompt.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    system_prompt = models.TextField(
+        help_text="System instruction used for RAG / chat responses"
+    )
+
+    # Scope (optional but IMPORTANT)
+    organization = models.ForeignKey(
+        Organization,
+        on_delete=models.CASCADE,
+        related_name="system_settings",
+        null=True,
+        blank=True
+    )
+
+    created_by = models.ForeignKey(
+        Profile,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_system_settings"
+    )
+
+    is_active = models.BooleanField(default=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        scope = self.organization.name if self.organization else "Global"
+        return f"SystemSettings ({scope})"
+
+
+
+
+
