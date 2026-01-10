@@ -117,3 +117,35 @@ class VectorStore:
         with self.conn.cursor() as cur:
             cur.execute("SELECT content FROM documents WHERE client_id = %s;", (client_id,))
             return " ".join([row[0] for row in cur.fetchall()])
+        
+    def get_document_text(self, client_id: str, document_id: str) -> str:
+        """Fetch all text chunks associated with a specific document_id."""
+        with self.conn.cursor() as cur:
+            cur.execute(
+                "SELECT content FROM documents WHERE client_id = %s AND document_id = %s ORDER BY id ASC;", 
+                (client_id, document_id)
+            )
+            rows = cur.fetchall()
+            return "\n".join([row[0] for row in rows]) if rows else ""
+
+    def get_url_content_for_client(self, client_id: str, max_chars: int = 2000) -> str:
+        """
+        Auto-discovers content from documents that act as URLs (start with http/https).
+        Used for fallback system prompt generation.
+        """
+        with self.conn.cursor() as cur:
+            # Postgres regex (~*) looks for document_id starting with http or https (case insensitive)
+            cur.execute("""
+                SELECT content 
+                FROM documents 
+                WHERE client_id = %s AND document_id ~* '^https?://'
+                ORDER BY id ASC
+                LIMIT 50;
+            """, (client_id,))
+            rows = cur.fetchall()
+            
+            if not rows:
+                return ""
+            
+            combined = "\n".join([row[0] for row in rows])
+            return combined[:max_chars]
