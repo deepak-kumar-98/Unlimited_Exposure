@@ -21,106 +21,88 @@ if not settings.configured:
 #------------------
 
 try:
-    # Latest SDK uses 'Firecrawl' class
     from firecrawl import Firecrawl
 except ImportError:
     try:
         from firecrawl import FirecrawlApp as Firecrawl
     except ImportError:
-        print("❌ Critical Error: 'firecrawl-py' not found. Please run: pip install firecrawl-py")
+        print("❌ Critical Error: 'firecrawl-py' not found.")
         sys.exit(1)
-
-# from config import settings
 
 class WebScraper:
     def __init__(self):
         if not settings.FIRECRAWL_API_KEY:
-            raise ValueError("❌ FIRECRAWL_API_KEY is missing in .env or config.py")
+            raise ValueError("❌ FIRECRAWL_API_KEY is missing in settings.py")
             
         self.app = Firecrawl(api_key=settings.FIRECRAWL_API_KEY)
 
     def scrape_page(self, url: str):
-        """
-        Uses Firecrawl to crawl the website and extract markdown.
-        Robustly handles different SDK response formats (Dict vs Object).
-        """
         print(f"🔥 Firecrawling site: {url} ...")
         
         try:
-            # Parameters for the crawl
-            # Note: You can try adding 'country': 'IN' to scrapeOptions if using a proxy plan,
-            # but standard requests might still be blocked by NSE.
+            # 1. SEND REQUEST
+            print("   ... Request sent, waiting for Firecrawl job to complete (this might take 10-20s) ...")
             crawl_status = self.app.crawl(
                 url, 
-                limit=10, # Keep limit low for testing
+                limit=5, # Reduced limit to 5 for faster debugging
                 scrape_options={'formats': ['markdown']},
                 poll_interval=2
             )
             
-            # --- ROBUST RESPONSE PARSING ---
-            data_list = []
+            # 2. DEBUG PRINT RAW RESPONSE
+            print("   ... Job returned! Analyzing response ...")
+            # We try to print a summary of the type to debug
+            print(f"   [DEBUG] Response Type: {type(crawl_status)}")
+            if hasattr(crawl_status, '__dict__'):
+                print(f"   [DEBUG] Attributes: {crawl_status.__dict__.keys()}")
+            elif isinstance(crawl_status, dict):
+                print(f"   [DEBUG] Keys: {crawl_status.keys()}")
 
-            # Case A: Response is an Object with a .data attribute (New SDK)
+            # 3. NORMALIZE DATA
+            data_list = []
             if hasattr(crawl_status, 'data'):
                 data_list = crawl_status.data
-            
-            # Case B: Response is a Dictionary with a 'data' key (Old SDK/API)
             elif isinstance(crawl_status, dict) and 'data' in crawl_status:
                 data_list = crawl_status['data']
-            
-            # Case C: Response is directly a List (Edge case)
             elif isinstance(crawl_status, list):
                 data_list = crawl_status
 
+            print(f"   [DEBUG] Pages found: {len(data_list) if data_list else 0}")
+
             if not data_list:
-                print(f"⚠️ Warning: No content returned for {url}")
-                print(f"Debug Info: {crawl_status}")
+                print(f"⚠️ Warning: Firecrawl returned successful status but NO data pages.")
                 return ""
 
             combined_content = ""
             page_count = 0
             
             for item in data_list:
-                # Extract fields dynamically (Handle Object vs Dict)
+                # Handle Dict vs Object
                 if isinstance(item, dict):
-                    # It's a dictionary
                     markdown = item.get('markdown', '')
-                    metadata = item.get('metadata', {})
-                    # Handle metadata being None or Dict
-                    if metadata is None: metadata = {}
+                    metadata = item.get('metadata', {}) or {}
                     source_url = metadata.get('sourceURL', url)
                 else:
-                    # It's likely a Pydantic object (Document)
                     markdown = getattr(item, 'markdown', '')
                     metadata = getattr(item, 'metadata', None)
-                    # Try to get source_url from metadata object or use default
-                    source_url = url
-                    if metadata and hasattr(metadata, 'source_url'):
-                        source_url = metadata.source_url
-                    elif metadata and hasattr(metadata, 'url'):
-                        source_url = metadata.url
+                    source_url = getattr(metadata, 'source_url', url) if metadata else url
 
-                # Check for "Service Unavailable" or blocking messages
+                # Block check
                 if "Service Temporarily Unavailable" in markdown:
-                    print(f"⚠️ SKIP: {source_url} (Blocked/Geo-fenced)")
+                    print(f"   ⚠️ SKIP: {source_url} (Blocked/Geo-fenced)")
                     continue
 
                 if markdown:
                     combined_content += f"\n\n--- SOURCE: {source_url} ---\n{markdown}"
                     page_count += 1
             
-            if page_count == 0:
-                print("⚠️ Scrape finished but all pages were empty or blocked.")
-                return ""
-
-            print(f"✅ Successfully crawled {page_count} pages.")
+            print(f"✅ Successfully extracted text from {page_count} pages.")
             return combined_content
             
-        except AttributeError as e:
-            print(f"❌ SDK Error: {e}")
-            return ""
         except Exception as e:
             print(f"❌ Failed to crawl {url}: {e}")
+            import traceback
+            traceback.print_exc()
             return ""
 
 if __name__ == "__main__":
