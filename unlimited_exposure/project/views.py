@@ -459,11 +459,11 @@ class GenerateSystemPromptAPIView(APIView):
                 if p.strip()
             ]
 
-            if len(personas) > 2:
-                return Response(
-                    {"error": "Provide at most 2 personas"},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
+            # if len(personas) > 2:
+            #     return Response(
+            #         {"error": "Provide at most 2 personas"},
+            #         status=status.HTTP_400_BAD_REQUEST
+            #     )
 
         # 🔥 Generate prompt (persona-based OR auto-discovered)
         prompt = generate_dynamic_system_prompt(
