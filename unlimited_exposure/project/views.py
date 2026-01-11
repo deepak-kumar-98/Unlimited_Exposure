@@ -382,6 +382,66 @@ class ChatMessagesAPIView(APIView):
 
 
 
+# class GenerateSystemPromptAPIView(APIView):
+#     permission_classes = [IsAuthenticated]
+
+#     def get(self, request):
+#         profile = request.user.profile
+#         organization = profile.organization
+
+#         personas_param = request.query_params.get("personas")
+
+#         if not personas_param:
+#             return Response(
+#                 {"error": "personas query parameter is required"},
+#                 status=status.HTTP_400_BAD_REQUEST
+#             )
+
+#         personas = [
+#             p.strip().lower()
+#             for p in personas_param.split(",")
+#             if p.strip()
+#         ]
+
+#         if not personas or len(personas) > 2:
+#             return Response(
+#                 {"error": "Provide 1 or 2 personas only"},
+#                 status=status.HTTP_400_BAD_REQUEST
+#             )
+
+#         # 🔥 Generate single prompt
+#         prompt = generate_dynamic_system_prompt(
+#             client_id=str(profile.id),
+#             personas=personas
+#         )
+
+#         # 🔄 Deactivate previous active prompt
+#         SystemSettings.objects.filter(
+#             organization=organization,
+#             is_active=True
+#         ).update(is_active=False)
+
+#         # 💾 Store new prompt
+#         settings = SystemSettings.objects.create(
+#             system_prompt=prompt,
+#             personas=personas,
+#             organization=organization,
+#             created_by=profile,
+#             is_active=True
+#         )
+
+#         return Response(
+#             {
+#                 "id": settings.id,
+#                 "personas": personas,
+#                 "system_prompt": prompt,
+#                 "created_at": settings.created_at
+#             },
+#             status=status.HTTP_200_OK
+#         )
+
+
+
 class GenerateSystemPromptAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -391,25 +451,21 @@ class GenerateSystemPromptAPIView(APIView):
 
         personas_param = request.query_params.get("personas")
 
-        if not personas_param:
-            return Response(
-                {"error": "personas query parameter is required"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        personas = None
+        if personas_param:
+            personas = [
+                p.strip().lower()
+                for p in personas_param.split(",")
+                if p.strip()
+            ]
 
-        personas = [
-            p.strip().lower()
-            for p in personas_param.split(",")
-            if p.strip()
-        ]
+            if len(personas) > 2:
+                return Response(
+                    {"error": "Provide at most 2 personas"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
 
-        if not personas or len(personas) > 2:
-            return Response(
-                {"error": "Provide 1 or 2 personas only"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        # 🔥 Generate single prompt
+        # 🔥 Generate prompt (persona-based OR auto-discovered)
         prompt = generate_dynamic_system_prompt(
             client_id=str(profile.id),
             personas=personas
@@ -424,7 +480,7 @@ class GenerateSystemPromptAPIView(APIView):
         # 💾 Store new prompt
         settings = SystemSettings.objects.create(
             system_prompt=prompt,
-            personas=personas,
+            personas=personas or [],
             organization=organization,
             created_by=profile,
             is_active=True
@@ -433,7 +489,7 @@ class GenerateSystemPromptAPIView(APIView):
         return Response(
             {
                 "id": settings.id,
-                "personas": personas,
+                "personas": personas or [],
                 "system_prompt": prompt,
                 "created_at": settings.created_at
             },
