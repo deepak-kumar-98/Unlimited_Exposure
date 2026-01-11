@@ -7,6 +7,7 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.exceptions import NotFound, PermissionDenied
 from django.db.models import Q
+import hashlib
 
 
 from .models import ChatSession, ChatMessage, SystemSettings, Organization
@@ -15,9 +16,10 @@ from .serializers import ChatSessionDetailSerializer, ChatSessionSerializer, Sys
 from .models import IngestedContent
 from .serializers import (
     IngestRequestSerializer,
-    IngestedContentSerializer
+    IngestedContentSerializer,
+    GenerateSystemPromptSerializer
 )
-from .AI.src.api_services import ingest_data_to_vector_db, generate_rag_response
+from .AI.src.api_services import generate_dynamic_system_prompt, ingest_data_to_vector_db, generate_rag_response
 
 
 from rest_framework.views import APIView
@@ -378,3 +380,64 @@ class ChatMessagesAPIView(APIView):
         # Use ChatSessionDetailSerializer to return the desired format
         serializer = ChatSessionDetailSerializer(chat)
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+
+class GenerateSystemPromptAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        serializer = GenerateSystemPromptSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        profile = request.user.profile
+        organization = profile.organization
+        personas = serializer.validated_data["personas"]
+
+        # Normalize persona names
+        normalized_personas = [
+            p.strip().lower() for p in personas if p.strip()
+        ]
+
+        if not normalized_personas:
+            return Response(
+                {"error": "At least one persona is required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        print(f"Generating system prompt for personas: {normalized_personas}")
+
+        # 🔥 Generate ONE prompt using the full persona list
+        prompt = generate_dynamic_system_prompt(
+            client_id=str(profile.id),
+            personas=normalized_personas
+        )
+
+        # 🔑 Store same prompt under each persona key
+        persona_prompt_map = {
+            persona: prompt for persona in normalized_personas
+        }
+
+        # Deactivate previous active settings for org
+        SystemSettings.objects.filter(
+            organization=organization,
+            is_active=True
+        ).update(is_active=False)
+
+        settings = SystemSettings.objects.create(
+            system_prompt=prompt,  # active prompt
+            persona_prompt_map=persona_prompt_map,
+            organization=organization,
+            created_by=profile,
+            is_active=True
+        )
+
+        return Response(
+            {
+                "id": settings.id,
+                "personas": normalized_personas,
+                "persona_prompt_map": persona_prompt_map,
+                "created_at": settings.created_at
+            },
+            status=status.HTTP_201_CREATED
+        )

@@ -112,3 +112,12 @@ class SystemSettingsSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at"
         ]
+
+
+class GenerateSystemPromptSerializer(serializers.Serializer):
+    personas = serializers.ListField(
+        child=serializers.CharField(),
+        required=True,
+        allow_empty=False
+    )
+

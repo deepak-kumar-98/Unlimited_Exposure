@@ -1,7 +1,7 @@
 # apps/content/urls.py
 
 from django.urls import path
-from .views import ChatMessagesAPIView, CreateSystemSettingsAPIView, IngestContentAPIView, ChatListAPIView, RAGChatAPIView, KnowledgeBaseAPIView
+from .views import ChatMessagesAPIView, CreateSystemSettingsAPIView, GenerateSystemPromptAPIView, IngestContentAPIView, ChatListAPIView, RAGChatAPIView, KnowledgeBaseAPIView
 
 urlpatterns = [
     path("ingest/", IngestContentAPIView.as_view(), name="ingest-content"),
@@ -14,5 +14,10 @@ urlpatterns = [
         ChatMessagesAPIView.as_view(),
         name="chat-messages"
     ),
+    path(
+    "dynamic_prompt/",
+    GenerateSystemPromptAPIView.as_view(),
+    name="generate-system-prompt"
+)
 
 ]

@@ -124,19 +124,66 @@ class ChatMessage(models.Model):
 
 
 
+# class SystemSettings(models.Model):
+#     """
+#     Stores system-level configuration for chat / RAG.
+#     Currently supports only system_prompt.
+#     """
+
+#     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+#     system_prompt = models.TextField(
+#         help_text="System instruction used for RAG / chat responses"
+#     )
+
+#     # Scope (optional but IMPORTANT)
+#     organization = models.ForeignKey(
+#         Organization,
+#         on_delete=models.CASCADE,
+#         related_name="system_settings",
+#         null=True,
+#         blank=True
+#     )
+
+#     created_by = models.ForeignKey(
+#         Profile,
+#         on_delete=models.SET_NULL,
+#         null=True,
+#         blank=True,
+#         related_name="created_system_settings"
+#     )
+
+#     is_active = models.BooleanField(default=True)
+
+#     created_at = models.DateTimeField(auto_now_add=True)
+#     updated_at = models.DateTimeField(auto_now=True)
+
+#     def __str__(self):
+#         scope = self.organization.name if self.organization else "Global"
+#         return f"SystemSettings ({scope})"
+
+
+
+
 class SystemSettings(models.Model):
     """
     Stores system-level configuration for chat / RAG.
-    Currently supports only system_prompt.
+    Each persona maps to exactly one system prompt.
     """
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
+    # Active prompt currently used by chat
     system_prompt = models.TextField(
-        help_text="System instruction used for RAG / chat responses"
+        help_text="Resolved system instruction used for RAG / chat responses"
     )
 
-    # Scope (optional but IMPORTANT)
+    # NEW: persona -> system_prompt mapping
+    persona_prompt_map = models.JSONField(
+        default=dict,
+        help_text="Mapping of persona name to generated system prompt"
+    )
+
     organization = models.ForeignKey(
         Organization,
         on_delete=models.CASCADE,
@@ -157,12 +204,4 @@ class SystemSettings(models.Model):
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-
-    def __str__(self):
-        scope = self.organization.name if self.organization else "Global"
-        return f"SystemSettings ({scope})"
-
-
-
-
 
