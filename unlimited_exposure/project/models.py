@@ -166,22 +166,16 @@ class ChatMessage(models.Model):
 
 
 class SystemSettings(models.Model):
-    """
-    Stores system-level configuration for chat / RAG.
-    Each persona maps to exactly one system prompt.
-    """
-
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
-    # Active prompt currently used by chat
     system_prompt = models.TextField(
-        help_text="Resolved system instruction used for RAG / chat responses"
+        help_text="System instruction used for RAG / chat responses"
     )
 
-    # NEW: persona -> system_prompt mapping
-    persona_prompt_map = models.JSONField(
-        default=dict,
-        help_text="Mapping of persona name to generated system prompt"
+    # 👇 NEW
+    personas = models.JSONField(
+        default=list,
+        help_text="List of personas used to generate this prompt"
     )
 
     organization = models.ForeignKey(
@@ -204,4 +198,8 @@ class SystemSettings(models.Model):
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        scope = self.organization.name if self.organization else "Global"
+        return f"SystemSettings ({scope})"
 

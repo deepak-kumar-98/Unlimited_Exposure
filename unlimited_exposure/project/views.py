@@ -17,7 +17,6 @@ from .models import IngestedContent
 from .serializers import (
     IngestRequestSerializer,
     IngestedContentSerializer,
-    GenerateSystemPromptSerializer
 )
 from .AI.src.api_services import generate_dynamic_system_prompt, ingest_data_to_vector_db, generate_rag_response
 
@@ -386,47 +385,46 @@ class ChatMessagesAPIView(APIView):
 class GenerateSystemPromptAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def post(self, request):
-        serializer = GenerateSystemPromptSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-
+    def get(self, request):
         profile = request.user.profile
         organization = profile.organization
-        personas = serializer.validated_data["personas"]
 
-        # Normalize persona names
-        normalized_personas = [
-            p.strip().lower() for p in personas if p.strip()
-        ]
+        personas_param = request.query_params.get("personas")
 
-        if not normalized_personas:
+        if not personas_param:
             return Response(
-                {"error": "At least one persona is required"},
+                {"error": "personas query parameter is required"},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        print(f"Generating system prompt for personas: {normalized_personas}")
+        personas = [
+            p.strip().lower()
+            for p in personas_param.split(",")
+            if p.strip()
+        ]
 
-        # 🔥 Generate ONE prompt using the full persona list
+        if not personas or len(personas) > 2:
+            return Response(
+                {"error": "Provide 1 or 2 personas only"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # 🔥 Generate single prompt
         prompt = generate_dynamic_system_prompt(
             client_id=str(profile.id),
-            personas=normalized_personas
+            personas=personas
         )
 
-        # 🔑 Store same prompt under each persona key
-        persona_prompt_map = {
-            persona: prompt for persona in normalized_personas
-        }
-
-        # Deactivate previous active settings for org
+        # 🔄 Deactivate previous active prompt
         SystemSettings.objects.filter(
             organization=organization,
             is_active=True
         ).update(is_active=False)
 
+        # 💾 Store new prompt
         settings = SystemSettings.objects.create(
-            system_prompt=prompt,  # active prompt
-            persona_prompt_map=persona_prompt_map,
+            system_prompt=prompt,
+            personas=personas,
             organization=organization,
             created_by=profile,
             is_active=True
@@ -435,9 +433,9 @@ class GenerateSystemPromptAPIView(APIView):
         return Response(
             {
                 "id": settings.id,
-                "personas": normalized_personas,
-                "persona_prompt_map": persona_prompt_map,
+                "personas": personas,
+                "system_prompt": prompt,
                 "created_at": settings.created_at
             },
-            status=status.HTTP_201_CREATED
+            status=status.HTTP_200_OK
         )

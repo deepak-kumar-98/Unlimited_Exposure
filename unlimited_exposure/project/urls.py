@@ -15,9 +15,7 @@ urlpatterns = [
         name="chat-messages"
     ),
     path(
-    "dynamic_prompt/",
-    GenerateSystemPromptAPIView.as_view(),
-    name="generate-system-prompt"
-)
-
+        "dynamic_prompt/",
+        GenerateSystemPromptAPIView.as_view()
+    ),
 ]

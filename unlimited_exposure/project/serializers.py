@@ -109,15 +109,16 @@ class SystemSettingsSerializer(serializers.ModelSerializer):
             "system_prompt",
             "organization",
             "is_active",
+            "personas",
             "created_at",
             "updated_at"
         ]
 
 
-class GenerateSystemPromptSerializer(serializers.Serializer):
-    personas = serializers.ListField(
-        child=serializers.CharField(),
-        required=True,
-        allow_empty=False
-    )
+# class GenerateSystemPromptSerializer(serializers.Serializer):
+#     personas = serializers.ListField(
+#         child=serializers.CharField(),
+#         required=True,
+#         allow_empty=False
+#     )
 
