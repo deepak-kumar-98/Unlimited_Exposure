@@ -164,7 +164,6 @@ class ChatMessage(models.Model):
 
 
 
-
 class SystemSettings(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
@@ -172,7 +171,7 @@ class SystemSettings(models.Model):
         help_text="System instruction used for RAG / chat responses"
     )
 
-    # 👇 NEW
+    # Stores personas used to generate this prompt
     personas = models.JSONField(
         default=list,
         help_text="List of personas used to generate this prompt"
@@ -181,9 +180,7 @@ class SystemSettings(models.Model):
     organization = models.ForeignKey(
         Organization,
         on_delete=models.CASCADE,
-        related_name="system_settings",
-        null=True,
-        blank=True
+        related_name="system_settings"
     )
 
     created_by = models.ForeignKey(
@@ -200,6 +197,4 @@ class SystemSettings(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
-        scope = self.organization.name if self.organization else "Global"
-        return f"SystemSettings ({scope})"
-
+        return f"SystemSettings ({self.organization.name})"

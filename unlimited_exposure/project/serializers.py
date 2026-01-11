@@ -115,10 +115,24 @@ class SystemSettingsSerializer(serializers.ModelSerializer):
         ]
 
 
-# class GenerateSystemPromptSerializer(serializers.Serializer):
-#     personas = serializers.ListField(
-#         child=serializers.CharField(),
-#         required=True,
-#         allow_empty=False
-#     )
+class GenerateSystemPromptSerializer(serializers.Serializer):
+    personas = serializers.ListField(
+        child=serializers.CharField(),
+        required=False,
+        default=list
+    )
+    system_prompt = serializers.CharField(
+        required=True,
+        help_text="Final system prompt approved by the user"
+    )
 
+
+
+
+class PreviewSystemPromptSerializer(serializers.Serializer):
+    personas = serializers.ListField(
+        child=serializers.CharField(),
+        required=False,
+        default=list,
+        help_text="Optional list of personas (max 2 handled in view)"
+    )

@@ -11,7 +11,7 @@ import hashlib
 
 
 from .models import ChatSession, ChatMessage, SystemSettings, Organization
-from .serializers import ChatSessionDetailSerializer, ChatSessionSerializer, SystemSettingsCreateSerializer, SystemSettingsSerializer, ChatMessageSerializer
+from .serializers import ChatSessionDetailSerializer, ChatSessionSerializer, GenerateSystemPromptSerializer, PreviewSystemPromptSerializer, SystemSettingsCreateSerializer, SystemSettingsSerializer, ChatMessageSerializer
 
 from .models import IngestedContent
 from .serializers import (
@@ -381,106 +381,62 @@ class ChatMessagesAPIView(APIView):
         return Response(serializer.data, status=status.HTTP_200_OK)
 
 
+class PreviewSystemPromptAPIView(APIView):
+    permission_classes = [IsAuthenticated]
 
-# class GenerateSystemPromptAPIView(APIView):
-#     permission_classes = [IsAuthenticated]
+    def post(self, request):
+        serializer = PreviewSystemPromptSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
 
-#     def get(self, request):
-#         profile = request.user.profile
-#         organization = profile.organization
+        profile = request.user.profile
 
-#         personas_param = request.query_params.get("personas")
+        personas = [
+            p.strip().lower()
+            for p in serializer.validated_data.get("personas", [])
+            if p.strip()
+        ]
 
-#         if not personas_param:
-#             return Response(
-#                 {"error": "personas query parameter is required"},
-#                 status=status.HTTP_400_BAD_REQUEST
-#             )
+        prompt = generate_dynamic_system_prompt(
+            client_id=str(profile.id),
+            personas=personas or None
+        )
 
-#         personas = [
-#             p.strip().lower()
-#             for p in personas_param.split(",")
-#             if p.strip()
-#         ]
-
-#         if not personas or len(personas) > 2:
-#             return Response(
-#                 {"error": "Provide 1 or 2 personas only"},
-#                 status=status.HTTP_400_BAD_REQUEST
-#             )
-
-#         # 🔥 Generate single prompt
-#         prompt = generate_dynamic_system_prompt(
-#             client_id=str(profile.id),
-#             personas=personas
-#         )
-
-#         # 🔄 Deactivate previous active prompt
-#         SystemSettings.objects.filter(
-#             organization=organization,
-#             is_active=True
-#         ).update(is_active=False)
-
-#         # 💾 Store new prompt
-#         settings = SystemSettings.objects.create(
-#             system_prompt=prompt,
-#             personas=personas,
-#             organization=organization,
-#             created_by=profile,
-#             is_active=True
-#         )
-
-#         return Response(
-#             {
-#                 "id": settings.id,
-#                 "personas": personas,
-#                 "system_prompt": prompt,
-#                 "created_at": settings.created_at
-#             },
-#             status=status.HTTP_200_OK
-#         )
-
+        return Response(
+            {
+                "personas": personas or ["default"],
+                "system_prompt": prompt
+            },
+            status=status.HTTP_200_OK
+        )
 
 
 class GenerateSystemPromptAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def get(self, request):
+    def post(self, request):
+        serializer = GenerateSystemPromptSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
         profile = request.user.profile
         organization = profile.organization
 
-        personas_param = request.query_params.get("personas")
+        personas = [
+            p.strip().lower()
+            for p in serializer.validated_data.get("personas", [])
+            if p.strip()
+        ]
 
-        personas = None
-        if personas_param:
-            personas = [
-                p.strip().lower()
-                for p in personas_param.split(",")
-                if p.strip()
-            ]
+        system_prompt = serializer.validated_data["system_prompt"]
 
-            # if len(personas) > 2:
-            #     return Response(
-            #         {"error": "Provide at most 2 personas"},
-            #         status=status.HTTP_400_BAD_REQUEST
-            #     )
-
-        # 🔥 Generate prompt (persona-based OR auto-discovered)
-        prompt = generate_dynamic_system_prompt(
-            client_id=str(profile.id),
-            personas=personas
-        )
-
-        # 🔄 Deactivate previous active prompt
+        # Deactivate previous active prompt
         SystemSettings.objects.filter(
             organization=organization,
             is_active=True
         ).update(is_active=False)
 
-        # 💾 Store new prompt
         settings = SystemSettings.objects.create(
-            system_prompt=prompt,
-            personas=personas or [],
+            system_prompt=system_prompt,
+            personas=personas or ["default"],
             organization=organization,
             created_by=profile,
             is_active=True
@@ -489,9 +445,51 @@ class GenerateSystemPromptAPIView(APIView):
         return Response(
             {
                 "id": settings.id,
-                "personas": personas or [],
-                "system_prompt": prompt,
+                "personas": settings.personas,
+                "system_prompt": settings.system_prompt,
                 "created_at": settings.created_at
             },
-            status=status.HTTP_200_OK
+            status=status.HTTP_201_CREATED
         )
+
+
+class ActiveSystemPromptAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        profile = request.user.profile
+        organization = profile.organization
+
+        active = SystemSettings.objects.filter(
+            organization=organization,
+            is_active=True
+        ).first()
+
+        all_personas = (
+            SystemSettings.objects
+            .filter(organization=organization)
+            .values_list("personas", flat=True)
+        )
+
+        persona_set = set()
+        for p_list in all_personas:
+            persona_set.update(p_list or [])
+
+        if not persona_set:
+            persona_set.add("default")
+
+        response = {
+            "active_system_prompt": None,
+            "active_personas": ["default"],
+            # "all_personas": sorted(persona_set),
+        }
+
+        if active:
+            response.update({
+                "id": active.id,
+                "active_system_prompt": active.system_prompt,
+                "active_personas": active.personas,
+                "updated_at": active.updated_at,
+            })
+
+        return Response(response, status=status.HTTP_200_OK)
