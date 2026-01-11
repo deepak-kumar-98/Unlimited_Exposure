@@ -2,6 +2,7 @@ import os
 import sys
 import csv
 from typing import List, Dict, Optional
+import hashlib  # <--- 1. NEW IMPORT
 
 # --- DJANGO SETUP BLOCK ---
 try:
@@ -31,6 +32,8 @@ except ImportError:
 
 vector_db = VectorStore()
 llm_client = UnifiedLLMClient()
+
+SYSTEM_PROMPT_CACHE = {} # <--- 2. NEW GLOBAL VARIABLE
 
 def extract_text_from_file(file_path: str) -> str:
     if not os.path.exists(file_path):
@@ -102,6 +105,94 @@ def ingest_data_to_vector_db(client_id: str, content_source: str, is_url: bool =
         return {"status": "success", "chunks": len(chunks)}
     
     return {"status": "empty", "chunks": 0}
+
+
+# ==========================================
+# 3. PROMPT GENERATION (Consolidated)
+# ==========================================
+
+def generate_dynamic_system_prompt(
+    client_id: str, 
+    personas: List[str] = None
+) -> str:
+    """
+    Creates a custom System Prompt using a unified logic flow.
+    
+    Logic:
+    1. If 'personas' are provided -> Generate prompt by blending these personas.
+    2. If 'personas' list is empty -> Auto-discover content from DB:
+       - Looks for any document IDs that are URLs (regex match).
+       - Extracts first 2000 chars of that content.
+       - Generates a prompt based on that content.
+    3. If neither provided/found -> Return a default helpful assistant prompt.
+    """
+    
+    # --- STRATEGY 1: EXPLICIT PERSONAS ---
+    if personas:
+        normalized_personas = sorted([p.strip().lower() for p in personas if p.strip()])
+        
+        if normalized_personas:
+            cache_key = f"{client_id}_persona_{hashlib.md5(''.join(normalized_personas).encode()).hexdigest()}"
+            
+            if cache_key in SYSTEM_PROMPT_CACHE:
+                print(f"⚡ Returning cached System Prompt for personas: {normalized_personas}")
+                return SYSTEM_PROMPT_CACHE[cache_key]
+
+            print(f"🧠 Generating System Prompt from Personas: {normalized_personas}...")
+            instruction = f"""
+            Create a highly effective System Prompt for an AI Chatbot.
+            The chatbot must embody the following personas: {', '.join(personas)}.
+            
+            Instructions:
+            1. Blend these personas seamlessly.
+            2. Define the tone, style, and behavior guidelines.
+            3. Output ONLY the System Prompt text. Do not include markdown quotes.
+            """
+            
+            generated_prompt = llm_client.generate_text(
+                system_prompt="You are an expert Prompt Engineer.",
+                user_prompt=instruction,
+                temperature=0.7
+            )
+            
+            if generated_prompt:
+                SYSTEM_PROMPT_CACHE[cache_key] = generated_prompt
+                return generated_prompt
+
+    # --- STRATEGY 2: AUTO-DISCOVER DB CONTENT (URL Fallback) ---
+    print(f"ℹ️ No personas provided. Checking DB for URL-based content for client: {client_id}")
+    
+    # Fetch content from DB where doc_id looks like a URL (limit 2000 chars)
+    db_content = vector_db.get_url_content_for_client(client_id, max_chars=2000)
+
+    if db_content:
+        cache_key = f"{client_id}_auto_url_content_{hashlib.md5(db_content.encode()).hexdigest()}"
+        if cache_key in SYSTEM_PROMPT_CACHE:
+            print(f"⚡ Returning cached System Prompt from auto-discovered content.")
+            return SYSTEM_PROMPT_CACHE[cache_key]
+
+        print(f"🧠 Generating System Prompt from DB URL content...")
+        instruction = """
+        Analyze the provided content snippet (extracted from the client's website).
+        Create a professional, robust 'System Prompt' (System Instruction) for an AI Chatbot that will represent this entity.
+        The System Prompt should define the bot's persona, tone, limitations, and core mission based on the text provided.
+        Output ONLY the System Prompt text. Do not include markdown quotes.
+        """
+        
+        generated_prompt = llm_client.generate_text(
+            system_prompt="You are an expert AI Architect.",
+            user_prompt=f"{instruction}\n\nCONTENT PREVIEW:\n{db_content}",
+            temperature=0.5
+        )
+        
+        if generated_prompt:
+            SYSTEM_PROMPT_CACHE[cache_key] = generated_prompt
+            return generated_prompt
+
+    # --- STRATEGY 3: DEFAULT ---
+    print("ℹ️ No personas or URL content found. Using default prompt.")
+    return "You are a helpful, professional AI assistant. Answer user queries politely and accurately using the provided context."
+
 
 def generate_rag_response(
     client_id: str, 
