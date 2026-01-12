@@ -19,6 +19,7 @@ from .serializers import (
     IngestedContentSerializer,
 )
 from .AI.src.api_services import generate_dynamic_system_prompt, ingest_data_to_vector_db, generate_rag_response
+from .AI.src.vector_store import VectorStore
 
 
 from rest_framework.views import APIView
@@ -236,6 +237,95 @@ class KnowledgeBaseAPIView(ListAPIView):
         ).order_by("-created_at")
 
 
+class KnowledgeBaseDeleteAPIView(APIView):
+    """
+    Delete a specific ingested content by ID.
+    Users can only delete content from their organization or content they uploaded.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def delete(self, request, id):
+        """
+        Delete ingested content by ID.
+        """
+        try:
+            profile = request.user.profile
+        except Profile.DoesNotExist:
+            return Response(
+                {"error": "Profile not found. Please complete account setup."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        try:
+            ingested_content = IngestedContent.objects.get(id=id)
+        except IngestedContent.DoesNotExist:
+            raise NotFound("Ingested content not found")
+
+        user_organization = profile.organization
+        can_delete = (
+            ingested_content.organization == user_organization or
+            ingested_content.uploaded_by == profile
+        )
+
+        if not can_delete:
+            return Response(
+                {"error": "You do not have permission to delete this content"},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        if ingested_content.content_type == IngestedContent.FILE:
+            # For files, use os.path.basename of the full storage path (matching ingestion logic exactly)
+            # ingested_content.data_url contains the path returned by default_storage.save()
+            try:
+                full_path = default_storage.path(ingested_content.data_url)
+                document_id = os.path.basename(full_path)
+            except Exception as e:
+                # Fallback: if storage path fails, try using file_name
+                print(f"⚠️ Warning: Could not get storage path, using file_name as fallback: {e}")
+                document_id = os.path.basename(ingested_content.file_name)
+        else:
+            document_id = ingested_content.data_url
+        
+        client_id = str(ingested_content.uploaded_by.id)
+        
+        try:
+            vector_store = VectorStore()
+            deleted_chunks = vector_store.delete_documents(client_id, document_id)
+            print(f"✅ Deleted {deleted_chunks} chunks from vector database for client_id={client_id}, document_id={document_id}")
+            if deleted_chunks == 0:
+                # Try alternative document_id formats in case of mismatch
+                print(f"⚠️ Warning: No chunks found with document_id={document_id}. Trying alternative formats...")
+                
+                if ingested_content.content_type == IngestedContent.FILE:
+                    # Try with file_name (original filename)
+                    alt_document_id = ingested_content.file_name
+                    deleted_chunks = vector_store.delete_documents(client_id, alt_document_id)
+                    if deleted_chunks > 0:
+                        print(f"✅ Deleted {deleted_chunks} chunks using alternative document_id={alt_document_id}")
+                    else:
+                        # Try with basename of data_url (relative path)
+                        alt_document_id = os.path.basename(ingested_content.data_url)
+                        deleted_chunks = vector_store.delete_documents(client_id, alt_document_id)
+                        if deleted_chunks > 0:
+                            print(f"✅ Deleted {deleted_chunks} chunks using alternative document_id={alt_document_id}")
+                        else:
+                            print(f"⚠️ Warning: No chunks found to delete with any document_id format. client_id={client_id}, tried: {document_id}, {ingested_content.file_name}, {alt_document_id}")
+                else:
+                    print(f"⚠️ Warning: No chunks found to delete. client_id={client_id}, document_id={document_id}")
+            else:
+                print(f"✅ Successfully deleted {deleted_chunks} embedding chunks")
+                
+        except Exception as e:
+            print(f"❌ Error deleting from vector database: {e}")
+            import traceback
+            traceback.print_exc()
+        ingested_content.delete()
+
+        return Response(
+            {"message": "Ingested content deleted successfully"},
+            status=status.HTTP_200_OK
+        )
+
+
 
 class CreateSystemSettingsAPIView(APIView):
     permission_classes = [IsAuthenticated]
@@ -384,21 +474,29 @@ class ChatMessagesAPIView(APIView):
 class PreviewSystemPromptAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def post(self, request):
-        serializer = PreviewSystemPromptSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
+    def get(self, request):
+        try:
+            profile = request.user.profile
+        except Profile.DoesNotExist:
+            return Response(
+                {"error": "Profile not found. Please complete account setup."},
+                status=status.HTTP_403_FORBIDDEN
+            )
 
-        profile = request.user.profile
-
-        personas = [
-            p.strip().lower()
-            for p in serializer.validated_data.get("personas", [])
-            if p.strip()
-        ]
+        # Get personas from query params (comma-separated string)
+        personas_param = request.query_params.get("personas", "")
+        
+        personas = []
+        if personas_param:
+            personas = [
+                p.strip().lower()
+                for p in personas_param.split(",")
+                if p.strip()
+            ]
 
         prompt = generate_dynamic_system_prompt(
             client_id=str(profile.id),
-            personas=personas or None
+            personas=personas if personas else None
         )
 
         return Response(

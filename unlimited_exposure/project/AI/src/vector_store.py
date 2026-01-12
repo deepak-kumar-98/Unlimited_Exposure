@@ -149,3 +149,24 @@ class VectorStore:
             
             combined = "\n".join([row[0] for row in rows])
             return combined[:max_chars]
+    
+    def delete_documents(self, client_id: str, document_id: str) -> int:
+        """
+        Delete all document chunks for a specific client_id and document_id.
+        
+        Args:
+            client_id: The client identifier.
+            document_id: The document identifier (filename for files, URL for URLs).
+        
+        Returns:
+            Number of rows deleted.
+        """
+        with self.conn.cursor() as cur:
+            cur.execute(
+                "DELETE FROM documents WHERE client_id = %s AND document_id = %s;",
+                (client_id, document_id)
+            )
+            deleted_count = cur.rowcount
+        self.conn.commit()
+        print(f"🗑️ Deleted {deleted_count} document chunks for Client: {client_id}, Document: {document_id}")
+        return deleted_count
