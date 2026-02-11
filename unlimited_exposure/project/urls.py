@@ -2,8 +2,10 @@
 
 from django.urls import path
 from .views import ActiveSystemPromptAPIView, ChatMessagesAPIView, CreateSystemSettingsAPIView, GenerateSystemPromptAPIView, IngestContentAPIView, ChatListAPIView, PreviewSystemPromptAPIView, RAGChatAPIView, KnowledgeBaseAPIView, KnowledgeBaseDeleteAPIView
+from .AI.agent_apis import AgentAPI
 
 urlpatterns = [
+    path("agents/", AgentAPI.as_view(), name="create-agent"),
     path("ingest/", IngestContentAPIView.as_view(), name="ingest-content"),
     path("knowledge-base/", KnowledgeBaseAPIView.as_view(), name="knowledge-base"),
     path("knowledge-base/<uuid:id>/", KnowledgeBaseDeleteAPIView.as_view(), name="delete-knowledge-base"),
