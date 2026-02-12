@@ -154,3 +154,29 @@ class AgentDetailAPI(APIView):
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         except NotFound as e:
             return Response({"error": str(e)}, status=status.HTTP_404_NOT_FOUND)
+
+
+    def delete(self, request, id):
+        try:
+            agent = self.get_object(id, request.user.profile)
+            agent_name = agent.name
+            
+            # Clean up vector database entries for this agent
+            try:
+                processor = DocumentProcessor(agent_id=str(agent.id))
+                processor.delete_agent_vectors()
+            except Exception as e:
+                print(f"Error deleting vectors for agent {agent.id}: {e}")
+            
+            # Delete the agent (cascade will delete related IngestedContent)
+            agent.delete()
+            
+            return Response(
+                {"message": f"Agent '{agent_name}' and all associated data deleted successfully"},
+                status=status.HTTP_200_OK
+            )
+        except NotFound as e:
+            return Response({"error": str(e)}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+

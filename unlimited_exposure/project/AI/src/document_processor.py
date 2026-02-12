@@ -199,3 +199,37 @@ class DocumentProcessor:
                 "error": str(e),
                 "source": source
             }
+    
+    def delete_agent_vectors(self) -> dict:
+        """
+        Delete all vector embeddings for this agent.
+        
+        Returns:
+            dict: {"status": "success", "agent_id": agent_id}
+        """
+        try:
+            print(f"🗑️  Deleting all vectors for agent: {self.agent_id}")
+            vector_store = PGVector(
+                collection_name=str(self.agent_id),
+                connection_string=self.connection_string,
+                embedding_function=self.embedding
+            )
+            
+            # Delete all vectors for this agent
+            vector_store.delete(
+                filter={"agent_id": self.agent_id}
+            )
+            
+            print(f"✅ Successfully deleted all vectors for agent: {self.agent_id}")
+            return {
+                "status": "success",
+                "agent_id": self.agent_id
+            }
+            
+        except Exception as e:
+            print(f"❌ Error deleting vectors for agent {self.agent_id}: {str(e)}")
+            return {
+                "status": "failed",
+                "error": str(e),
+                "agent_id": self.agent_id
+            }
