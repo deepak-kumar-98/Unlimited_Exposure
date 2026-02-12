@@ -1,8 +1,28 @@
 # apps/content/serializers.py
 
 from rest_framework import serializers
-from .models import IngestedContent
+from .models import IngestedContent, Agent
 from .models import ChatSession, ChatMessage, SystemSettings
+
+class AgentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Agent
+        fields = [
+            "id",
+            "name",
+            "role",
+            "role",
+            "system_prompt",
+            "status",
+            "created_at",
+            "updated_at"
+        ]
+        read_only_fields = ["id", "created_at", "updated_at"]
+
+    status = serializers.SerializerMethodField()
+
+    def get_status(self, obj):
+        return "active" if obj.is_active else "paused"
 
 class IngestedContentSerializer(serializers.ModelSerializer):
     uploaded_by = serializers.StringRelatedField(read_only=True)

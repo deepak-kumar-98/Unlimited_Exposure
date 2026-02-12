@@ -27,6 +27,18 @@ class Agent(models.Model):
 
     is_active = models.BooleanField(default=True)
 
+    role = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="List of roles/personas for the agent (e.g. ['Support Agent', 'Sales Agent'])"
+    )
+
+    system_prompt = models.TextField(
+        null=True,
+        blank=True,
+        help_text="Custom system prompt for this agent"
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -216,7 +228,9 @@ class SystemSettings(models.Model):
     organization = models.ForeignKey(
         Organization,
         on_delete=models.CASCADE,
-        related_name="system_settings"
+        related_name="system_settings",
+        null=True,
+        blank=True
     )
 
     created_by = models.ForeignKey(

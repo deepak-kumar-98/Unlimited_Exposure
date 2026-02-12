@@ -10,7 +10,7 @@ from django.db.models import Q
 import hashlib
 
 
-from .models import ChatSession, ChatMessage, SystemSettings, Organization
+from .models import ChatSession, ChatMessage, SystemSettings, Organization, Agent
 from .serializers import ChatSessionDetailSerializer, ChatSessionSerializer, GenerateSystemPromptSerializer, PreviewSystemPromptSerializer, SystemSettingsCreateSerializer, SystemSettingsSerializer, ChatMessageSerializer
 
 from .models import IngestedContent
@@ -49,6 +49,20 @@ class IngestContentAPIView(APIView):
 
         # 🔒 Always derive org from profile (never from request)
         organization = profile.organization
+        
+        # Get agent_id from query params or request data
+        agent_id = request.query_params.get("agent_id") or request.data.get("agent_id")
+        agent = None
+        
+        # If agent_id is provided, verify it belongs to the user's organization
+        if agent_id:
+            try:
+                agent = Agent.objects.get(id=agent_id, organization=organization)
+            except Agent.DoesNotExist:
+                return Response(
+                    {"error": "Agent not found or access denied"},
+                    status=status.HTTP_404_NOT_FOUND
+                )
 
         created = []
 
@@ -60,6 +74,7 @@ class IngestContentAPIView(APIView):
             path = default_storage.save(f"uploads/{file.name}", file)
 
             content = IngestedContent.objects.create(
+                agent=agent,
                 uploaded_by=profile,
                 organization=organization,
                 file_name=file.name,
@@ -68,11 +83,18 @@ class IngestContentAPIView(APIView):
                 ingestion_status="processing"
             )
 
-            result = ingest_data_to_vector_db(
-                client_id=str(profile.id),
-                content_source=default_storage.path(path),
-                is_url=False
-            )
+            # Use agent-based ingestion if agent is provided
+            if agent:
+                from .AI.src.document_processor import DocumentProcessor
+                processor = DocumentProcessor(agent_id=str(agent.id))
+                result = processor.process_pdf(default_storage.path(path))
+            else:
+                # Fallback to old client-based ingestion
+                result = ingest_data_to_vector_db(
+                    client_id=str(profile.id),
+                    content_source=default_storage.path(path),
+                    is_url=False
+                )
 
             content.chunk_count = result.get("chunks", 0)
             content.ingestion_status = result.get("status")
@@ -83,6 +105,7 @@ class IngestContentAPIView(APIView):
         # ---------- URL INGESTION ----------
         for url in urls:
             content = IngestedContent.objects.create(
+                agent=agent,
                 uploaded_by=profile,
                 organization=organization,
                 file_name=url,
@@ -91,11 +114,24 @@ class IngestContentAPIView(APIView):
                 ingestion_status="processing"
             )
 
-            result = ingest_data_to_vector_db(
-                client_id=str(profile.id),
-                content_source=url,
-                is_url=True
-            )
+            # Use agent-based ingestion if agent is provided
+            if agent:
+                from .AI.src.document_processor import DocumentProcessor
+                processor = DocumentProcessor(agent_id=str(agent.id))
+                # For URLs, use process_text method (you may need to fetch URL content first)
+                # This is a simplified version - you might need to add URL fetching logic
+                result = ingest_data_to_vector_db(
+                    client_id=str(profile.id),
+                    content_source=url,
+                    is_url=True
+                )
+            else:
+                # Fallback to old client-based ingestion
+                result = ingest_data_to_vector_db(
+                    client_id=str(profile.id),
+                    content_source=url,
+                    is_url=True
+                )
 
             content.chunk_count = result.get("chunks", 0)
             content.ingestion_status = result.get("status")
@@ -107,6 +143,7 @@ class IngestContentAPIView(APIView):
             IngestedContentSerializer(created, many=True).data,
             status=status.HTTP_201_CREATED
         )
+
 
 
 
@@ -218,6 +255,7 @@ class ChatListAPIView(ListAPIView):
 class KnowledgeBaseAPIView(ListAPIView):
     """
     Get all ingested content (knowledge base) for the user's organization.
+    Optionally filter by agent_id to get agent-specific knowledge base.
     """
     serializer_class = IngestedContentSerializer
     permission_classes = [IsAuthenticated]
@@ -230,11 +268,26 @@ class KnowledgeBaseAPIView(ListAPIView):
         
         user_organization = profile.organization
         
+        # Get agent_id from query params if provided
+        agent_id = self.request.query_params.get("agent_id")
+        
+        # Base query: filter by organization or uploaded_by
+        base_query = Q(organization=user_organization) | Q(uploaded_by=profile)
+        
+        # If agent_id is provided, filter by agent
+        if agent_id:
+            try:
+                # Verify the agent belongs to the user's organization
+                agent = Agent.objects.get(id=agent_id, organization=user_organization)
+                # Filter by agent
+                return IngestedContent.objects.filter(
+                    base_query & Q(agent=agent)
+                ).order_by("-created_at")
+            except Agent.DoesNotExist:
+                raise PermissionDenied("Agent not found or access denied")
+        
         # Return all ingested content for the user's organization
-        # Handle both cases: organization is set OR uploaded_by is the user (for backward compatibility)
-        return IngestedContent.objects.filter(
-            Q(organization=user_organization) | Q(uploaded_by=profile)
-        ).order_by("-created_at")
+        return IngestedContent.objects.filter(base_query).order_by("-created_at")
 
 
 class KnowledgeBaseDeleteAPIView(APIView):
@@ -272,52 +325,80 @@ class KnowledgeBaseDeleteAPIView(APIView):
                 {"error": "You do not have permission to delete this content"},
                 status=status.HTTP_403_FORBIDDEN
             )
-        if ingested_content.content_type == IngestedContent.FILE:
-            # For files, use os.path.basename of the full storage path (matching ingestion logic exactly)
-            # ingested_content.data_url contains the path returned by default_storage.save()
+        
+        # Delete vectors from the agent's vector database
+        if ingested_content.agent:
             try:
-                full_path = default_storage.path(ingested_content.data_url)
-                document_id = os.path.basename(full_path)
-            except Exception as e:
-                # Fallback: if storage path fails, try using file_name
-                print(f"⚠️ Warning: Could not get storage path, using file_name as fallback: {e}")
-                document_id = os.path.basename(ingested_content.file_name)
-        else:
-            document_id = ingested_content.data_url
-        
-        client_id = str(ingested_content.uploaded_by.id)
-        
-        try:
-            vector_store = VectorStore()
-            deleted_chunks = vector_store.delete_documents(client_id, document_id)
-            print(f"✅ Deleted {deleted_chunks} chunks from vector database for client_id={client_id}, document_id={document_id}")
-            if deleted_chunks == 0:
-                # Try alternative document_id formats in case of mismatch
-                print(f"⚠️ Warning: No chunks found with document_id={document_id}. Trying alternative formats...")
+                from .AI.src.document_processor import DocumentProcessor
                 
+                # Get the document source for deletion
                 if ingested_content.content_type == IngestedContent.FILE:
-                    # Try with file_name (original filename)
-                    alt_document_id = ingested_content.file_name
-                    deleted_chunks = vector_store.delete_documents(client_id, alt_document_id)
-                    if deleted_chunks > 0:
-                        print(f"✅ Deleted {deleted_chunks} chunks using alternative document_id={alt_document_id}")
-                    else:
-                        # Try with basename of data_url (relative path)
-                        alt_document_id = os.path.basename(ingested_content.data_url)
+                    try:
+                        full_path = default_storage.path(ingested_content.data_url)
+                        document_source = os.path.basename(full_path)
+                    except Exception as e:
+                        print(f"⚠️ Warning: Could not get storage path, using file_name as fallback: {e}")
+                        document_source = ingested_content.file_name
+                else:
+                    document_source = ingested_content.data_url
+                
+                # Use DocumentProcessor to delete from agent's vector database
+                processor = DocumentProcessor(agent_id=str(ingested_content.agent.id))
+                result = processor.delete_document(document_source)
+                
+                if result.get("status") == "success":
+                    print(f"✅ Deleted vectors for document '{document_source}' from agent {ingested_content.agent.id}")
+                else:
+                    print(f"⚠️ Warning: Failed to delete vectors: {result.get('error')}")
+                    
+            except Exception as e:
+                print(f"❌ Error deleting from agent vector database: {e}")
+                import traceback
+                traceback.print_exc()
+        else:
+            # Fallback to old client-based deletion for backward compatibility
+            if ingested_content.content_type == IngestedContent.FILE:
+                try:
+                    full_path = default_storage.path(ingested_content.data_url)
+                    document_id = os.path.basename(full_path)
+                except Exception as e:
+                    print(f"⚠️ Warning: Could not get storage path, using file_name as fallback: {e}")
+                    document_id = os.path.basename(ingested_content.file_name)
+            else:
+                document_id = ingested_content.data_url
+            
+            client_id = str(ingested_content.uploaded_by.id)
+            
+            try:
+                vector_store = VectorStore()
+                deleted_chunks = vector_store.delete_documents(client_id, document_id)
+                print(f"✅ Deleted {deleted_chunks} chunks from vector database for client_id={client_id}, document_id={document_id}")
+                if deleted_chunks == 0:
+                    print(f"⚠️ Warning: No chunks found with document_id={document_id}. Trying alternative formats...")
+                    
+                    if ingested_content.content_type == IngestedContent.FILE:
+                        alt_document_id = ingested_content.file_name
                         deleted_chunks = vector_store.delete_documents(client_id, alt_document_id)
                         if deleted_chunks > 0:
                             print(f"✅ Deleted {deleted_chunks} chunks using alternative document_id={alt_document_id}")
                         else:
-                            print(f"⚠️ Warning: No chunks found to delete with any document_id format. client_id={client_id}, tried: {document_id}, {ingested_content.file_name}, {alt_document_id}")
+                            alt_document_id = os.path.basename(ingested_content.data_url)
+                            deleted_chunks = vector_store.delete_documents(client_id, alt_document_id)
+                            if deleted_chunks > 0:
+                                print(f"✅ Deleted {deleted_chunks} chunks using alternative document_id={alt_document_id}")
+                            else:
+                                print(f"⚠️ Warning: No chunks found to delete with any document_id format. client_id={client_id}, tried: {document_id}, {ingested_content.file_name}, {alt_document_id}")
+                    else:
+                        print(f"⚠️ Warning: No chunks found to delete. client_id={client_id}, document_id={document_id}")
                 else:
-                    print(f"⚠️ Warning: No chunks found to delete. client_id={client_id}, document_id={document_id}")
-            else:
-                print(f"✅ Successfully deleted {deleted_chunks} embedding chunks")
-                
-        except Exception as e:
-            print(f"❌ Error deleting from vector database: {e}")
-            import traceback
-            traceback.print_exc()
+                    print(f"✅ Successfully deleted {deleted_chunks} embedding chunks")
+                    
+            except Exception as e:
+                print(f"❌ Error deleting from vector database: {e}")
+                import traceback
+                traceback.print_exc()
+        
+        # Delete the ingested content record
         ingested_content.delete()
 
         return Response(
@@ -518,6 +599,54 @@ class GenerateSystemPromptAPIView(APIView):
         profile = request.user.profile
         organization = profile.organization
 
+        # Check if agent_id is provided
+        agent_id = request.query_params.get("agent_id")
+        
+        if agent_id:
+            # Update Agent instead of creating SystemSettings
+            try:
+                agent = Agent.objects.get(id=agent_id, organization=organization)
+                
+                # Extract data from request
+                system_prompt = serializer.validated_data.get("system_prompt")
+                personas = serializer.validated_data.get("personas", [])
+                
+                # Update agent fields
+                if system_prompt:
+                    agent.system_prompt = system_prompt
+                
+                # Store all personas in role field (as a list)
+                if personas:
+                    agent.role = personas
+                else:
+                    # Set default role if no personas provided
+                    agent.role = ["Support Agent"]
+                
+                agent.save()
+                
+                # Return agent data in similar format
+                from .serializers import AgentSerializer
+                agent_serializer = AgentSerializer(agent)
+                
+                return Response(
+                    {
+                        "id": str(agent.id),
+                        "agent_id": str(agent.id),
+                        "system_prompt": agent.system_prompt,
+                        "role": agent.role,
+                        "updated_at": agent.updated_at,
+                        "source": "agent"
+                    },
+                    status=status.HTTP_200_OK
+                )
+                
+            except Agent.DoesNotExist:
+                return Response(
+                    {"error": "Agent not found or access denied"},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+        
+        # Original logic: Create organization-level SystemSettings
         personas = [
             p.strip().lower()
             for p in serializer.validated_data.get("personas", [])
@@ -545,7 +674,8 @@ class GenerateSystemPromptAPIView(APIView):
                 "id": settings.id,
                 "personas": settings.personas,
                 "system_prompt": settings.system_prompt,
-                "created_at": settings.created_at
+                "created_at": settings.created_at,
+                "source": "organization"
             },
             status=status.HTTP_201_CREATED
         )
@@ -558,36 +688,69 @@ class ActiveSystemPromptAPIView(APIView):
         profile = request.user.profile
         organization = profile.organization
 
+        agent_id = request.query_params.get("agent_id")
+        
+        # 1. Start with response structure
+        response = {
+            "active_system_prompt": None,
+            "active_personas": ["default"],
+            "source": "none"
+        }
+
+        # 2. If agent_id is provided, try to get Agent's prompt first
+        if agent_id:
+            try:
+                agent = Agent.objects.get(id=agent_id, organization=organization)
+                
+                # A. Check for explicit system_prompt on Agent
+                if agent.system_prompt:
+                    response.update({
+                        "id": str(agent.id),
+                        "active_system_prompt": agent.system_prompt,
+                        "active_personas": [agent.role] if agent.role else ["assistant"],
+                        "updated_at": agent.updated_at,
+                        "source": "agent_specific"
+                    })
+                    return Response(response, status=status.HTTP_200_OK)
+                
+                # B. Dynamic generation based on Role if no explicit prompt
+                elif agent.role:
+                     from .AI.src.api_services import generate_dynamic_system_prompt
+                     try:
+                        dynamic_prompt = generate_dynamic_system_prompt(
+                            client_id=str(agent.created_by.id) if agent.created_by else str(profile.id),
+                            personas=[agent.role]
+                        )
+                        response.update({
+                            "id": str(agent.id),
+                            "active_system_prompt": dynamic_prompt,
+                            "active_personas": [agent.role],
+                            "updated_at": agent.updated_at,
+                            "source": "agent_dynamic_role"
+                        })
+                        return Response(response, status=status.HTTP_200_OK)
+                     except Exception as e:
+                         print(f"Error generating dynamic prompt for agent {agent.id}: {e}")
+
+            except Agent.DoesNotExist:
+                return Response(
+                    {"error": "Agent not found or access denied"},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+
+        # 3. Fallback to Organization/Global System Settings
         active = SystemSettings.objects.filter(
             organization=organization,
             is_active=True
         ).first()
 
-        all_personas = (
-            SystemSettings.objects
-            .filter(organization=organization)
-            .values_list("personas", flat=True)
-        )
-
-        persona_set = set()
-        for p_list in all_personas:
-            persona_set.update(p_list or [])
-
-        if not persona_set:
-            persona_set.add("default")
-
-        response = {
-            "active_system_prompt": None,
-            "active_personas": ["default"],
-            # "all_personas": sorted(persona_set),
-        }
-
         if active:
             response.update({
-                "id": active.id,
+                "id": str(active.id),
                 "active_system_prompt": active.system_prompt,
                 "active_personas": active.personas,
                 "updated_at": active.updated_at,
+                "source": "organization_settings"
             })
-
+            
         return Response(response, status=status.HTTP_200_OK)
