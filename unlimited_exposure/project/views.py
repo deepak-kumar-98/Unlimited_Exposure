@@ -10,7 +10,7 @@ from django.db.models import Q
 import hashlib
 
 
-from .models import ChatSession, ChatMessage, SystemSettings, Organization
+from .models import ChatSession, ChatMessage, SystemSettings, Organization, Agent
 from .serializers import ChatSessionDetailSerializer, ChatSessionSerializer, GenerateSystemPromptSerializer, PreviewSystemPromptSerializer, SystemSettingsCreateSerializer, SystemSettingsSerializer, ChatMessageSerializer
 
 from .models import IngestedContent
@@ -518,6 +518,54 @@ class GenerateSystemPromptAPIView(APIView):
         profile = request.user.profile
         organization = profile.organization
 
+        # Check if agent_id is provided
+        agent_id = request.query_params.get("agent_id")
+        
+        if agent_id:
+            # Update Agent instead of creating SystemSettings
+            try:
+                agent = Agent.objects.get(id=agent_id, organization=organization)
+                
+                # Extract data from request
+                system_prompt = serializer.validated_data.get("system_prompt")
+                personas = serializer.validated_data.get("personas", [])
+                
+                # Update agent fields
+                if system_prompt:
+                    agent.system_prompt = system_prompt
+                
+                # Store all personas in role field (as a list)
+                if personas:
+                    agent.role = personas
+                else:
+                    # Set default role if no personas provided
+                    agent.role = ["Support Agent"]
+                
+                agent.save()
+                
+                # Return agent data in similar format
+                from .serializers import AgentSerializer
+                agent_serializer = AgentSerializer(agent)
+                
+                return Response(
+                    {
+                        "id": str(agent.id),
+                        "agent_id": str(agent.id),
+                        "system_prompt": agent.system_prompt,
+                        "role": agent.role,
+                        "updated_at": agent.updated_at,
+                        "source": "agent"
+                    },
+                    status=status.HTTP_200_OK
+                )
+                
+            except Agent.DoesNotExist:
+                return Response(
+                    {"error": "Agent not found or access denied"},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+        
+        # Original logic: Create organization-level SystemSettings
         personas = [
             p.strip().lower()
             for p in serializer.validated_data.get("personas", [])
@@ -545,7 +593,8 @@ class GenerateSystemPromptAPIView(APIView):
                 "id": settings.id,
                 "personas": settings.personas,
                 "system_prompt": settings.system_prompt,
-                "created_at": settings.created_at
+                "created_at": settings.created_at,
+                "source": "organization"
             },
             status=status.HTTP_201_CREATED
         )
@@ -558,36 +607,69 @@ class ActiveSystemPromptAPIView(APIView):
         profile = request.user.profile
         organization = profile.organization
 
+        agent_id = request.query_params.get("agent_id")
+        
+        # 1. Start with response structure
+        response = {
+            "active_system_prompt": None,
+            "active_personas": ["default"],
+            "source": "none"
+        }
+
+        # 2. If agent_id is provided, try to get Agent's prompt first
+        if agent_id:
+            try:
+                agent = Agent.objects.get(id=agent_id, organization=organization)
+                
+                # A. Check for explicit system_prompt on Agent
+                if agent.system_prompt:
+                    response.update({
+                        "id": str(agent.id),
+                        "active_system_prompt": agent.system_prompt,
+                        "active_personas": [agent.role] if agent.role else ["assistant"],
+                        "updated_at": agent.updated_at,
+                        "source": "agent_specific"
+                    })
+                    return Response(response, status=status.HTTP_200_OK)
+                
+                # B. Dynamic generation based on Role if no explicit prompt
+                elif agent.role:
+                     from .AI.src.api_services import generate_dynamic_system_prompt
+                     try:
+                        dynamic_prompt = generate_dynamic_system_prompt(
+                            client_id=str(agent.created_by.id) if agent.created_by else str(profile.id),
+                            personas=[agent.role]
+                        )
+                        response.update({
+                            "id": str(agent.id),
+                            "active_system_prompt": dynamic_prompt,
+                            "active_personas": [agent.role],
+                            "updated_at": agent.updated_at,
+                            "source": "agent_dynamic_role"
+                        })
+                        return Response(response, status=status.HTTP_200_OK)
+                     except Exception as e:
+                         print(f"Error generating dynamic prompt for agent {agent.id}: {e}")
+
+            except Agent.DoesNotExist:
+                return Response(
+                    {"error": "Agent not found or access denied"},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+
+        # 3. Fallback to Organization/Global System Settings
         active = SystemSettings.objects.filter(
             organization=organization,
             is_active=True
         ).first()
 
-        all_personas = (
-            SystemSettings.objects
-            .filter(organization=organization)
-            .values_list("personas", flat=True)
-        )
-
-        persona_set = set()
-        for p_list in all_personas:
-            persona_set.update(p_list or [])
-
-        if not persona_set:
-            persona_set.add("default")
-
-        response = {
-            "active_system_prompt": None,
-            "active_personas": ["default"],
-            # "all_personas": sorted(persona_set),
-        }
-
         if active:
             response.update({
-                "id": active.id,
+                "id": str(active.id),
                 "active_system_prompt": active.system_prompt,
                 "active_personas": active.personas,
                 "updated_at": active.updated_at,
+                "source": "organization_settings"
             })
-
+            
         return Response(response, status=status.HTTP_200_OK)

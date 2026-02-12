@@ -53,3 +53,7 @@ urllib3
 uvicorn
 websockets
 yarl
+
+langchain
+langchain_community
+langchain_openai
