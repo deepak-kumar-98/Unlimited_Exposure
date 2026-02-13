@@ -185,6 +185,8 @@ def generate_dynamic_system_prompt(
             user_prompt=f"{instruction}\n\nCONTENT PREVIEW:\n{db_content}",
             temperature=0.5
         )
+
+        generated_prompt = generated_prompt+"\n Please answer the query to the point."
         
         if generated_prompt:
             SYSTEM_PROMPT_CACHE[cache_key] = generated_prompt
