@@ -36,12 +36,13 @@ SECRET_KEY = "django-insecure-ki#(#(p5iuld@7-in_po5%@dh)j5crka7e_)&*k!&fel_i35rk
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ["212.64.211.27", "pannel.aiagentfactory.ca"]
 
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://localhost:5173",
     "https://cury-ai.vercel.app",
+    "https://pannel.aiagentfactory.ca"
 ]
 
 
@@ -97,10 +98,22 @@ WSGI_APPLICATION = "unlimited_exposure.wsgi.application"
 # Database
 # https://docs.djangoproject.com/en/4.2/ref/settings/#databases
 
+# DATABASES = {
+#     "default": {
+#         "ENGINE": "django.db.backends.sqlite3",
+#         "NAME": BASE_DIR / "db.sqlite3",
+#     }
+# }
+
+
 DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
+    'default': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': os.getenv('POSTGRES_DB'),
+        'USER': os.getenv('POSTGRES_USER'),
+        'PASSWORD': os.getenv('POSTGRES_PASSWORD'),
+        'HOST': os.getenv('POSTGRES_HOST'),
+        'PORT': os.getenv('POSTGRES_PORT'),
     }
 }
 
@@ -173,7 +186,7 @@ EMAIL_HOST_USER = "deepakkumar1538@gmail.com"
 EMAIL_HOST_PASSWORD = "sylh rcms mcae pljp"
 DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
 
-FRONTEND_URL = "http://localhost:5173/"
+FRONTEND_URL = "https://pannel.aiagentfactory.ca"
 
 
 # ==============================================

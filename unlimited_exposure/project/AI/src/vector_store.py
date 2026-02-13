@@ -25,14 +25,17 @@ try:
 except ImportError:
     from llm_gateway import UnifiedLLMClient
 
+import os
+import psycopg2
+
 class VectorStore:
     def __init__(self):
         self.conn = psycopg2.connect(
-            host=settings.POSTGRES_HOST,
-            port=settings.POSTGRES_PORT,
-            dbname=settings.POSTGRES_DB_NAME,
-            user=settings.POSTGRES_USER,
-            password=settings.POSTGRES_PASSWORD
+            dbname=os.getenv("POSTGRES_DB"),
+            user=os.getenv("POSTGRES_USER"),
+            password=os.getenv("POSTGRES_PASSWORD"),
+            host=os.getenv("POSTGRES_HOST", "postgres"),
+            port=int(os.getenv("POSTGRES_PORT", 5432)),
         )
         self.client = UnifiedLLMClient()
         self._init_db()
