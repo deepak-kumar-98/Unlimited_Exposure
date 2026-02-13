@@ -18,7 +18,7 @@ from .serializers import (
     IngestRequestSerializer,
     IngestedContentSerializer,
 )
-from .AI.src.api_services import generate_dynamic_system_prompt, ingest_data_to_vector_db, generate_rag_response
+from .AI.src.api_services import generate_dynamic_system_prompt, ingest_data_to_vector_db, generate_rag_response, new_generate_response
 from .AI.src.vector_store import VectorStore
 
 
@@ -162,6 +162,10 @@ class RAGChatAPIView(APIView):
 
         query = request.data.get("query")
         chat_id = request.data.get("chat_id")
+        agent_id = request.data.get("agent_id")  # New: Support agent-specific RAG
+
+        if not agent_id:
+            return Response({"error": "agent_id is required"}, status=status.HTTP_400_BAD_REQUEST)
 
         if not query:
             return Response(
@@ -218,8 +222,15 @@ class RAGChatAPIView(APIView):
         )
 
         # 5️⃣ Generate RAG response
-        answer = generate_rag_response(
-            client_id=str(profile.id),
+        # answer = generate_rag_response(
+        #     client_id=str(profile.id),
+        #     user_query=query,
+        #     system_prompt=system_prompt,
+        #     chat_history=history
+        # )
+
+        answer = new_generate_response(
+            agent_id=agent_id,
             user_query=query,
             system_prompt=system_prompt,
             chat_history=history
