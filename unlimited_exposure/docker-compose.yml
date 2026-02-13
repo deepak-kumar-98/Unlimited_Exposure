@@ -2,7 +2,7 @@ services:
   postgres:
     image: pgvector/pgvector:pg16
     container_name: postgres-exposure_chatbot
-    restart: always
+    restart: unless-stopped
     hostname: postgres
     volumes:
       - db_data:/var/lib/postgresql/data
@@ -20,7 +20,7 @@ services:
   pgadmin:
     image: dpage/pgadmin4
     container_name: pgadmin-exposure_chatbot
-    restart: always
+    restart: unless-stopped
     depends_on:
       - postgres
     ports:
@@ -32,6 +32,27 @@ services:
       - internal
     env_file:
       - .env
+
+  backend:
+    build: .
+    container_name: exposure-backend
+    restart: unless-stopped
+    command: >
+      sh -c "
+      python manage.py migrate --noinput &&
+      gunicorn unlimited_exposure.wsgi:application --bind 0.0.0.0:8000
+      "
+    volumes:
+      - .:/app
+    ports:
+      - "8000:8000"
+    depends_on:
+      - postgres
+    env_file:
+      - .env
+    networks:
+      - internal
+
 
 volumes:
   db_data:
