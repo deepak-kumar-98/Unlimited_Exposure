@@ -21,6 +21,7 @@ from pypdf import PdfReader
 from docx import Document
 from .llm_gateway import UnifiedLLMClient
 from .vector_store import VectorStore
+from .document_processor import DocumentProcessor
 
 try:
     from .webscraper import WebScraper
@@ -228,5 +229,44 @@ Context Information:
 
 User Question: {user_query}
 """
+
+    return llm_client.generate_text(system_prompt, full_user_prompt, temperature=0.3)
+
+
+def new_generate_response(
+    agent_id: str, 
+    user_query: str, 
+    system_prompt: Optional[str] = None, 
+    chat_history: List[Dict[str, str]] = None
+) -> str:
+    
+    vec_db = DocumentProcessor(agent_id=agent_id)
+
+    retrieved_docs = vec_db.search(user_query, k=10)
+    if not retrieved_docs:
+        return "I apologize, but I don't have enough information."
+
+    context_text = "\n\n".join(retrieved_docs)[:30000]
+
+    # 2. History
+    history_context = ""
+    if chat_history:
+        recent_msgs = chat_history[-4:]
+        history_lines = [f"{m.get('role','').capitalize()}: {m.get('content','')}" for m in recent_msgs]
+        history_context = "\n".join(history_lines)
+
+    # 3. Prompt
+    if not system_prompt:
+        system_prompt = "You are a helpful assistant. Answer using Context and History only."
+
+    full_user_prompt = f"""
+                Conversation History:
+                {history_context}
+
+                Context Information:
+                {context_text}
+
+                User Question: {user_query}
+        """
 
     return llm_client.generate_text(system_prompt, full_user_prompt, temperature=0.3)

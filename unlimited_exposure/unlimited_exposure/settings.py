@@ -218,3 +218,4 @@ MAX_HISTORY_TURNS = 4
 # We use BASE_DIR to make sure the path works on any machine
 DATA_DIR = BASE_DIR / "data"
 FAQ_FILE_PATH = DATA_DIR / "faq.json"
+UPLOAD_ROOT = BASE_DIR.parent / "uploaded_files"  # Organization file uploads

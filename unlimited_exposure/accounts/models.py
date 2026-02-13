@@ -52,7 +52,7 @@ class PlansAndFeature(models.Model):
 
 
 class Profile(models.Model):
-    user = models.OneToOneField(User, on_delete=models.CASCADE)
+    user = models.OneToOneField(User, on_delete=models.CASCADE, unique=True)
 
     organization = models.ForeignKey(
         "Organization",

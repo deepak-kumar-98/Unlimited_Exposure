@@ -6,6 +6,46 @@ from django.contrib.auth.models import User
 from accounts.models import Profile, Organization
 
 
+class Agent(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    name = models.CharField(max_length=255)
+
+    organization = models.ForeignKey(
+        Organization,
+        on_delete=models.CASCADE,
+        related_name="agents"
+    )
+
+    created_by = models.ForeignKey(
+        Profile,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_agents"
+    )
+
+    is_active = models.BooleanField(default=True)
+
+    role = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="List of roles/personas for the agent (e.g. ['Support Agent', 'Sales Agent'])"
+    )
+
+    system_prompt = models.TextField(
+        null=True,
+        blank=True,
+        help_text="Custom system prompt for this agent"
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return self.name
+
+
 class IngestedContent(models.Model):
     FILE = "file"
     URL = "url"
@@ -16,6 +56,14 @@ class IngestedContent(models.Model):
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    agent = models.ForeignKey(
+        Agent,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="agent"
+    )
 
     # Ownership
     uploaded_by = models.ForeignKey(
@@ -180,7 +228,9 @@ class SystemSettings(models.Model):
     organization = models.ForeignKey(
         Organization,
         on_delete=models.CASCADE,
-        related_name="system_settings"
+        related_name="system_settings",
+        null=True,
+        blank=True
     )
 
     created_by = models.ForeignKey(
