@@ -164,7 +164,7 @@ class DocumentProcessor:
             filter={"agent_id": self.agent_id}
         )
         
-        return [doc.page_content for doc in results]
+        return "\n\n".join([doc.page_content for doc in results])
     
     def delete_document(self, source: str) -> dict:
         """
