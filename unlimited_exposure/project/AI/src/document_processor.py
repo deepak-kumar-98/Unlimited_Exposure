@@ -122,7 +122,7 @@ class DocumentProcessor:
             PGVector.from_documents(
                 documents=chunks,
                 embedding=self.embedding,
-                collection_name=f"agent_{self.agent_id}",
+                collection_name=str(self.agent_id),
                 connection_string=self.connection_string,
                 pre_delete_collection=False
             )

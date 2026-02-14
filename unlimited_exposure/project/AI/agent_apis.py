@@ -1,5 +1,4 @@
 import os
-from django.conf import settings
 from django.core.files.storage import default_storage
 from rest_framework.views import APIView
 from project.models import Agent, IngestedContent
@@ -9,9 +8,9 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.exceptions import NotFound
-from project.serializers import IngestRequestSerializer, AgentSerializer
+from project.serializers import AgentSerializer
 from .src.document_processor import DocumentProcessor
-
+from .src.api_services import extract_text_from_file
 
 class AgentAPI(APIView):
     authentication_classes = [JWTAuthentication]
@@ -30,22 +29,28 @@ class AgentAPI(APIView):
                 )
 
             agent = Agent.objects.create(name=name, organization=organization, created_by=user_profile)
+            processor = DocumentProcessor(agent_id=str(agent.id))
 
             # Handle file upload if present
             uploaded_file = request.FILES.get('file')
             if uploaded_file:
-                # Save file
                 file_path = default_storage.save(
                     f"uploaded_files/{organization.name}/{uploaded_file.name}",
                     uploaded_file
                 )
+                full_path = default_storage.path(file_path)
+                ext = os.path.splitext(uploaded_file.name)[1].lower()
                 
-                # Process PDF with DocumentProcessor
-                processor = DocumentProcessor(agent_id=str(agent.id))
-                result = processor.process_pdf(default_storage.path(file_path))
+                # Use process_pdf for PDFs, extract_text_from_file + process_text for others
+                if ext == '.pdf':
+                    result = processor.process_pdf(full_path)
+                else:
+                    extracted_text = extract_text_from_file(full_path)
+                    if not extracted_text.strip():
+                        return Response({"error": "Failed to extract text from file"}, status=status.HTTP_400_BAD_REQUEST)
+                    result = processor.process_text(extracted_text, source=uploaded_file.name)
                 
                 if result["status"] == "success":
-                    # Create IngestedContent record
                     IngestedContent.objects.create(
                         agent=agent,
                         uploaded_by=user_profile,
@@ -56,16 +61,40 @@ class AgentAPI(APIView):
                         chunk_count=result["chunks"],
                         ingestion_status="completed"
                     )
+
+            
+            # Handle URL scraping if present
+            url = request.data.get('url')
+            if url:
+                from .src.api_services import scrape_website_content
+                
+                scraped_text = scrape_website_content(url)
+                if not scraped_text.strip():
+                    return Response({"error": "Failed to scrape website content"}, status=status.HTTP_400_BAD_REQUEST)
+                
+                result = processor.process_text(scraped_text, source=url)
+                
+                if result["status"] == "success":
+                    IngestedContent.objects.create(
+                        agent=agent,
+                        uploaded_by=user_profile,
+                        organization=organization,
+                        file_name=url,
+                        content_type=IngestedContent.URL,
+                        data_url=url,
+                        chunk_count=result["chunks"],
+                        ingestion_status="completed"
+                    )
                     
                     return Response({
-                        "message": "Agent created and file processed successfully",
+                        "message": "Agent created and URL content processed successfully",
                         "agent_id": agent.id,
                         "chunks": result["chunks"]
                     }, status=status.HTTP_201_CREATED)
                 else:
                     return Response({"error": result.get("error")}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
             
-            return Response({"message": "Agent created successfully", "agent_id": agent.id}, status=status.HTTP_201_CREATED)
+            return Response({"message": "Agent created successfully"}, status=status.HTTP_201_CREATED)
 
         except Profile.DoesNotExist:
             return Response(
