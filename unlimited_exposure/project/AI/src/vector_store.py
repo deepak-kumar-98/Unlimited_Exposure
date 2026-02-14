@@ -35,7 +35,7 @@ class VectorStore:
             user=os.getenv("POSTGRES_USER"),
             password=os.getenv("POSTGRES_PASSWORD"),
             host=os.getenv("POSTGRES_HOST", "postgres"),
-            port=int(os.getenv("POSTGRES_PORT", 5432)),
+            port=int(os.getenv("POSTGRES_PORT")),
         )
         self.client = UnifiedLLMClient()
         self._init_db()
