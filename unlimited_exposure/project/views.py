@@ -8,8 +8,7 @@ from rest_framework import status
 from rest_framework.exceptions import NotFound, PermissionDenied
 from django.db.models import Q
 import hashlib
-
-
+from .AI.src.document_processor import DocumentProcessor
 from .models import ChatSession, ChatMessage, SystemSettings, Organization, Agent
 from .serializers import ChatSessionDetailSerializer, ChatSessionSerializer, GenerateSystemPromptSerializer, PreviewSystemPromptSerializer, SystemSettingsCreateSerializer, SystemSettingsSerializer, ChatMessageSerializer
 
@@ -18,7 +17,7 @@ from .serializers import (
     IngestRequestSerializer,
     IngestedContentSerializer,
 )
-from .AI.src.api_services import generate_dynamic_system_prompt, ingest_data_to_vector_db, generate_rag_response, new_generate_response
+from .AI.src.api_services import generate_dynamic_system_prompt, ingest_data_to_vector_db, generate_rag_response, new_generate_response, extract_text_from_file, scrape_website_content, generate_dynamic_system_prompt
 from .AI.src.vector_store import VectorStore
 
 
@@ -60,7 +59,7 @@ class IngestContentAPIView(APIView):
                 agent = Agent.objects.get(id=agent_id, organization=organization)
             except Agent.DoesNotExist:
                 return Response(
-                    {"error": "Agent not found or access denied"},
+                    {"error": "Agent not found"},
                     status=status.HTTP_404_NOT_FOUND
                 )
 
@@ -71,7 +70,7 @@ class IngestContentAPIView(APIView):
 
         # ---------- FILE INGESTION ----------
         for file in files:
-            path = default_storage.save(f"uploads/{file.name}", file)
+            path = default_storage.save(f"uploaded_files/{organization.name}/{file.name}", file)
 
             content = IngestedContent.objects.create(
                 agent=agent,
@@ -85,22 +84,32 @@ class IngestContentAPIView(APIView):
 
             # Use agent-based ingestion if agent is provided
             if agent:
-                from .AI.src.document_processor import DocumentProcessor
                 processor = DocumentProcessor(agent_id=str(agent.id))
-                result = processor.process_pdf(default_storage.path(path))
-            else:
-                # Fallback to old client-based ingestion
-                result = ingest_data_to_vector_db(
-                    client_id=str(profile.id),
-                    content_source=default_storage.path(path),
-                    is_url=False
-                )
+                full_path = default_storage.path(path)
+                ext = os.path.splitext(file.name)[1].lower()
+                
+                # Use process_pdf for PDFs, extract_text_from_file + process_text for others
+                if ext == '.pdf':
+                    result = processor.process_pdf(full_path)
+                else:
+                    extracted_text = extract_text_from_file(full_path)
+                    if extracted_text.strip():
+                        result = processor.process_text(extracted_text, source=file.name)
+                    else:
+                        result = {"status": "failed", "chunks": 0}
+            # else:
+            #     # Fallback to old client-based ingestion
+            #     result = ingest_data_to_vector_db(
+            #         client_id=str(profile.id),
+            #         content_source=default_storage.path(path),
+            #         is_url=False
+            #     )
 
-            content.chunk_count = result.get("chunks", 0)
-            content.ingestion_status = result.get("status")
-            content.save()
+                content.chunk_count = result.get("chunks", 0)
+                content.ingestion_status = "completed" if result.get("status", "error") == "success" else result.get("status", "error")
+                content.save()
 
-            created.append(content)
+                created.append(content)
 
         # ---------- URL INGESTION ----------
         for url in urls:
@@ -116,28 +125,26 @@ class IngestContentAPIView(APIView):
 
             # Use agent-based ingestion if agent is provided
             if agent:
-                from .AI.src.document_processor import DocumentProcessor
                 processor = DocumentProcessor(agent_id=str(agent.id))
-                # For URLs, use process_text method (you may need to fetch URL content first)
-                # This is a simplified version - you might need to add URL fetching logic
-                result = ingest_data_to_vector_db(
-                    client_id=str(profile.id),
-                    content_source=url,
-                    is_url=True
-                )
-            else:
-                # Fallback to old client-based ingestion
-                result = ingest_data_to_vector_db(
-                    client_id=str(profile.id),
-                    content_source=url,
-                    is_url=True
-                )
+                
+                scraped_text = scrape_website_content(url)
+                if scraped_text.strip():
+                    result = processor.process_text(scraped_text, source=url)
+                else:
+                    result = {"status": "failed", "chunks": 0}
+            # else:
+            #     # Fallback to old client-based ingestion
+            #     result = ingest_data_to_vector_db(
+            #         client_id=str(profile.id),
+            #         content_source=url,
+            #         is_url=True
+            #     )
 
-            content.chunk_count = result.get("chunks", 0)
-            content.ingestion_status = result.get("status")
-            content.save()
+                content.chunk_count = result.get("chunks", 0)
+                content.ingestion_status = "completed" if result.get("status", "error") == "success" else result.get("status", "error")
+                content.save()
 
-            created.append(content)
+                created.append(content)
 
         return Response(
             IngestedContentSerializer(created, many=True).data,
@@ -340,7 +347,6 @@ class KnowledgeBaseDeleteAPIView(APIView):
         # Delete vectors from the agent's vector database
         if ingested_content.agent:
             try:
-                from .AI.src.document_processor import DocumentProcessor
                 
                 # Get the document source for deletion
                 if ingested_content.content_type == IngestedContent.FILE:
@@ -726,7 +732,6 @@ class ActiveSystemPromptAPIView(APIView):
                 
                 # B. Dynamic generation based on Role if no explicit prompt
                 elif agent.role:
-                     from .AI.src.api_services import generate_dynamic_system_prompt
                      try:
                         dynamic_prompt = generate_dynamic_system_prompt(
                             client_id=str(agent.created_by.id) if agent.created_by else str(profile.id),
