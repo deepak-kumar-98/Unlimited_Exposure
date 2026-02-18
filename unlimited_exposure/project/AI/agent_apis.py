@@ -10,7 +10,8 @@ from rest_framework import status
 from rest_framework.exceptions import NotFound
 from project.serializers import AgentSerializer
 from .src.document_processor import DocumentProcessor
-from .src.api_services import extract_text_from_file
+from .src.api_services import extract_text_from_file, scrape_website_content
+
 
 class AgentAPI(APIView):
     authentication_classes = [JWTAuthentication]
@@ -32,69 +33,76 @@ class AgentAPI(APIView):
             processor = DocumentProcessor(agent_id=str(agent.id))
 
             # Handle file upload if present
-            uploaded_file = request.FILES.get('file')
-            if uploaded_file:
-                file_path = default_storage.save(
-                    f"uploaded_files/{organization.name}/{uploaded_file.name}",
-                    uploaded_file
-                )
-                full_path = default_storage.path(file_path)
-                ext = os.path.splitext(uploaded_file.name)[1].lower()
-                
-                # Use process_pdf for PDFs, extract_text_from_file + process_text for others
-                if ext == '.pdf':
-                    result = processor.process_pdf(full_path)
-                else:
-                    extracted_text = extract_text_from_file(full_path)
-                    if not extracted_text.strip():
-                        return Response({"error": "Failed to extract text from file"}, status=status.HTTP_400_BAD_REQUEST)
-                    result = processor.process_text(extracted_text, source=uploaded_file.name)
-                
-                if result["status"] == "success":
-                    IngestedContent.objects.create(
-                        agent=agent,
-                        uploaded_by=user_profile,
-                        organization=organization,
-                        file_name=uploaded_file.name,
-                        content_type=IngestedContent.FILE,
-                        data_url=file_path,
-                        chunk_count=result["chunks"],
-                        ingestion_status="completed"
+            uploaded_files = request.FILES.getlist('file')
+            if uploaded_files:
+                for file in uploaded_files:
+                    file_path = default_storage.save(
+                        f"uploaded_files/{organization.name}/{file.name}",
+                        file
                     )
+                    full_path = default_storage.path(file_path)
+                    ext = os.path.splitext(file.name)[1].lower()
+                    
+                    # Use process_pdf for PDFs, extract_text_from_file + process_text for others
+                    if ext == '.pdf':
+                        result = processor.process_pdf(full_path)
+                    else:
+                        extracted_text = extract_text_from_file(full_path)
+                        if not extracted_text.strip():
+                            return Response({"error": "Failed to extract text from file"}, status=status.HTTP_400_BAD_REQUEST)
+                        result = processor.process_text(extracted_text, source=file.name)
+                    
+                    if result["status"] == "success":
+                        IngestedContent.objects.create(
+                            agent=agent,
+                            uploaded_by=user_profile,
+                            organization=organization,
+                            file_name=file.name,
+                            content_type=IngestedContent.FILE,
+                            data_url=file_path,
+                            chunk_count=result["chunks"],
+                            ingestion_status="completed"
+                        )
 
             
             # Handle URL scraping if present
-            url = request.data.get('url')
-            if url:
-                from .src.api_services import scrape_website_content
-                
-                scraped_text = scrape_website_content(url)
-                if not scraped_text.strip():
-                    return Response({"error": "Failed to scrape website content"}, status=status.HTTP_400_BAD_REQUEST)
-                
-                result = processor.process_text(scraped_text, source=url)
-                
-                if result["status"] == "success":
-                    IngestedContent.objects.create(
-                        agent=agent,
-                        uploaded_by=user_profile,
-                        organization=organization,
-                        file_name=url,
-                        content_type=IngestedContent.URL,
-                        data_url=url,
-                        chunk_count=result["chunks"],
-                        ingestion_status="completed"
-                    )
-                    
-                    return Response({
-                        "message": "Agent created and URL content processed successfully",
-                        "agent_id": agent.id,
-                        "chunks": result["chunks"]
-                    }, status=status.HTTP_201_CREATED)
-                else:
-                    return Response({"error": result.get("error")}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            urls = request.data.get('url', [])
+            if urls and not isinstance(urls, list):
+                urls = [urls]
             
-            return Response({"message": "Agent created successfully"}, status=status.HTTP_201_CREATED)
+            for url in urls:
+                if url and url.strip():
+                    # Validate URL format
+                    if not url.startswith(('http://', 'https://')):
+                        url = 'https://' + url
+                    
+                    try:
+                        scraped_text = scrape_website_content(url)
+                        if not scraped_text.strip():
+                            print(f"Warning: No content scraped from {url}")
+                            continue
+                        
+                        result = processor.process_text(scraped_text, source=url)
+                        
+                        if result["status"] == "success":
+                            IngestedContent.objects.create(
+                                agent=agent,
+                                uploaded_by=user_profile,
+                                organization=organization,
+                                file_name=url,
+                                content_type=IngestedContent.URL,
+                                data_url=url,
+                                chunk_count=result["chunks"],
+                                ingestion_status="completed"
+                            )
+                    except Exception as e:
+                        print(f"Error scraping URL {url}: {str(e)}")
+                        continue
+            
+            return Response({
+                        "message": "Agent created and URL content processed successfully",
+                        "agent_id": agent.id
+                    }, status=status.HTTP_201_CREATED)
 
         except Profile.DoesNotExist:
             return Response(
