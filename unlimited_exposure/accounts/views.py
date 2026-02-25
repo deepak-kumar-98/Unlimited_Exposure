@@ -14,10 +14,15 @@ from rest_framework.decorators import api_view
 from django.contrib.auth import authenticate
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from accounts.serializers import UserSerializer, LoginSerializer, ForgotPasswordSerializer, ResetPasswordSerializer
-from accounts.models import Profile, Organization, OrganizationMember
+from accounts.serializers import (
+    UserSerializer, LoginSerializer, ForgotPasswordSerializer, 
+    ResetPasswordSerializer, ProfileSerializer, TransactionSerializer,
+    PlansAndFeatureSerializer
+)
+from accounts.models import Profile, Organization, OrganizationMember, PlansAndFeature, Transaction
 from accounts.senduseremail import SendUserEmail
 from accounts.messages import get_response_messages
+from accounts.paypal_service import PayPalService
 
 MESSAGES = get_response_messages()
 
@@ -253,6 +258,18 @@ class VerifyAccount(APIView):
                 invitation_accepted=True,
             )
 
+            basic_plan, _ = PlansAndFeature.objects.get_or_create(
+                name="Basic",
+                defaults={
+                    "allowed_no_of_projects": "1",
+                    "allowed_no_of_content": "5",
+                    "allowed_no_of_queries": "10",
+                    "price": "0",
+                    "sub_text": "Basic Plan"
+                }
+            )
+            profile.update_subscription(basic_plan)
+
             return Response(
                 {"message": MESSAGES.get("success.email-verified")},
                 status=status.HTTP_200_OK,
@@ -335,6 +352,7 @@ class UserMeView(APIView):
     def get(self, request):
         profile = request.user.profile
         org = profile.organization
+        serializer = ProfileSerializer(profile)
 
         return Response({
             "id": request.user.id,
@@ -343,7 +361,8 @@ class UserMeView(APIView):
             "organization": {
                 "id": org.id,
                 "name": org.name
-            }
+            },
+            "profile": serializer.data
         })
 
 
@@ -392,3 +411,131 @@ class ResetPasswordView(APIView):
 
         serializer.save(user)
         return Response({'message': 'Password has been reset successfully'}, status=status.HTTP_200_OK)
+
+
+class CreatePayPalOrderView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        plan_id = request.data.get("plan_id")
+        if not plan_id:
+            return Response({"error": "plan_id is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            plan = PlansAndFeature.objects.get(id=plan_id)
+        except (PlansAndFeature.DoesNotExist, ValueError):
+            return Response({"error": "Invalid plan_id"}, status=status.HTTP_400_BAD_REQUEST)
+
+        paypal_service = PayPalService()
+        order = paypal_service.create_order(amount=plan.price, currency="USD")
+        
+        if not order:
+            return Response({"error": "Failed to create PayPal order"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        # Create Transaction record
+        Transaction.objects.create(
+            profile=request.user.profile,
+            plan=plan,
+            paypal_order_id=order["id"],
+            amount=plan.price,
+            status=Transaction.PENDING
+        )
+
+        return Response(order, status=status.HTTP_201_CREATED)
+
+
+class CapturePayPalOrderView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        order_id = request.data.get("order_id")
+        if not order_id:
+            return Response({"error": "order_id is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            transaction = Transaction.objects.get(paypal_order_id=order_id)
+        except Transaction.DoesNotExist:
+            return Response({"error": "Transaction not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        paypal_service = PayPalService()
+        capture = paypal_service.capture_order(order_id)
+        
+        if not capture:
+            transaction.status = Transaction.FAILED
+            transaction.save()
+            return Response({"error": "Failed to capture PayPal order"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        # Check if payment was successful
+        if capture.get("status") == "COMPLETED":
+            transaction.status = Transaction.COMPLETED
+            transaction.save()
+            
+            # Extract billing address from PayPal response
+            payer = capture.get("payer", {})
+            address_obj = payer.get("address", {})
+            billing_address = ""
+            if address_obj:
+                address_parts = [
+                    address_obj.get("address_line_1"),
+                    address_obj.get("address_line_2"),
+                    address_obj.get("admin_area_2"), # City
+                    address_obj.get("admin_area_1"), # State
+                    address_obj.get("postal_code"),
+                    address_obj.get("country_code")
+                ]
+                billing_address = ", ".join([p for p in address_parts if p])
+
+            # Update user profile subscription, limits, and billing address
+            profile = transaction.profile
+            plan = transaction.plan
+            profile.update_subscription(plan, billing_address=billing_address)
+            
+            return Response({"message": "Payment captured and subscription updated", "capture": capture}, status=status.HTTP_200_OK)
+        else:
+            transaction.status = Transaction.FAILED
+            transaction.save()
+            return Response({"error": "Payment not completed", "capture": capture}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class CancelPayPalOrderView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        order_id = request.data.get("order_id")
+        if not order_id:
+            return Response({"error": "order_id is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            transaction = Transaction.objects.get(
+                paypal_order_id=order_id, 
+                profile=request.user.profile
+            )
+        except Transaction.DoesNotExist:
+            return Response({"error": "Transaction not found or unauthorized"}, status=status.HTTP_404_NOT_FOUND)
+
+        if transaction.status == Transaction.PENDING:
+            transaction.status = Transaction.CANCELLED
+            transaction.save()
+            return Response({"message": "Transaction cancelled successfully"}, status=status.HTTP_200_OK)
+        
+        return Response(
+            {"error": f"Cannot cancel transaction with status: {transaction.status}"}, 
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+
+class BillingHistoryView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        transactions = Transaction.objects.filter(profile=request.user.profile).order_by('-created_at')
+        serializer = TransactionSerializer(transactions, many=True)
+        
+        # Include all available plans
+        plans = PlansAndFeature.objects.all()
+        plans_serializer = PlansAndFeatureSerializer(plans, many=True)
+        
+        return Response({
+            "history": serializer.data,
+            "available_plans": plans_serializer.data
+        }, status=status.HTTP_200_OK)

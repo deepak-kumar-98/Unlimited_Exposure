@@ -1,6 +1,10 @@
 from django.urls import path
 from accounts.views import LoginView, RegisterUser
-from accounts.views import VerifyAccount, UserMeView, ForgotPasswordView, ResetPasswordView
+from accounts.views import (
+    VerifyAccount, UserMeView, ForgotPasswordView, ResetPasswordView, 
+    CreatePayPalOrderView, CapturePayPalOrderView, CancelPayPalOrderView,
+    BillingHistoryView
+)
 from rest_framework_simplejwt.views import TokenRefreshView
 
 urlpatterns = [
@@ -11,4 +15,8 @@ urlpatterns = [
     path('me/', UserMeView.as_view(), name='user_me'),
     path('forgot-password/', ForgotPasswordView.as_view(), name='forgot_password'),
     path('reset-password/<str:uidb64>/<str:token>/', ResetPasswordView.as_view(), name='reset_password'),
+    path('paypal/create-order/', CreatePayPalOrderView.as_view(), name='paypal_create_order'),
+    path('paypal/capture-order/', CapturePayPalOrderView.as_view(), name='paypal_capture_order'),
+    path('paypal/cancel-order/', CancelPayPalOrderView.as_view(), name='paypal_cancel_order'),
+    path('billing-history/', BillingHistoryView.as_view(), name='billing_history'),
 ]
