@@ -11,7 +11,7 @@ import hashlib
 from .AI.src.document_processor import DocumentProcessor
 from .models import ChatSession, ChatMessage, SystemSettings, Organization, Agent
 from .serializers import ChatSessionDetailSerializer, ChatSessionSerializer, GenerateSystemPromptSerializer, PreviewSystemPromptSerializer, SystemSettingsCreateSerializer, SystemSettingsSerializer, ChatMessageSerializer
-
+from accounts.models import OrganizationMember
 from .models import IngestedContent
 from .serializers import (
     IngestRequestSerializer,
@@ -42,6 +42,16 @@ class IngestContentAPIView(APIView):
                 {"error": "Profile not found. Please complete account verification."},
                 status=status.HTTP_403_FORBIDDEN
             )
+
+        org_id = request.query_params.get("org_id") or request.data.get("org_id")
+
+        if not org_id:
+            return Response({"error": "org_id is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        member = OrganizationMember.objects.filter(organization=org_id, user=request.user.profile, role__in=[OrganizationMember.OWNER, OrganizationMember.ADMIN]).first()
+
+        if not member:
+            return Response({"error": "You do not have permission to perform this action"}, status=status.HTTP_403_FORBIDDEN)
 
         serializer = IngestRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -170,6 +180,16 @@ class RAGChatAPIView(APIView):
         query = request.data.get("query")
         chat_id = request.data.get("chat_id")
         agent_id = request.data.get("agent_id")  # New: Support agent-specific RAG
+        org_id = request.query_params.get("org_id") or request.data.get("org_id")
+
+        if not org_id:
+            return Response({"error": "org_id is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        member = OrganizationMember.objects.filter(organization=org_id, user=request.user.profile).first()
+
+        if not member:
+            return Response({"error": "You do not have permission to perform this action"}, status=status.HTTP_403_FORBIDDEN)
+
 
         if not agent_id:
             return Response({"error": "agent_id is required"}, status=status.HTTP_400_BAD_REQUEST)
