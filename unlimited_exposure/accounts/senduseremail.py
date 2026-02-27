@@ -76,10 +76,10 @@ def SendUserEmail(
             organization_role = Extra_info.get("organization_role", "member")
 
             mail_subject = f"You're Invited to Join {organization_name}"
-            url_link = f"{frontend_url}/activate/?invitation-token={Invitation_token}&email={to_email}"
+            url_link = f"{frontend_url}/activate/?invitation_token={Invitation_token}&email={to_email}"
 
             message = render_to_string(
-                "organization_invitation.html",
+                "org_invite.html",
                 {
                     "url_link": url_link,
                     "username": username,
