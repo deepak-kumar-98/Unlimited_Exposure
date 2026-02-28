@@ -265,18 +265,46 @@ class VerifyAccount(APIView):
             user.is_active = True
             user.save()
             
-            # Validate invitation token
+            # Create user's own primary organization (same as normal registration)
+            personal_org = Organization.objects.create(
+                name=f"{user.first_name or user.email}'s Organization"
+            )
+
+            profile = Profile.objects.create(
+                user=user,
+                organization=personal_org
+            )
+
+            personal_org.owner = profile
+            personal_org.save(update_fields=["owner"])
+
+            # Make user OWNER of their own organization
+            OrganizationMember.objects.create(
+                user=profile,
+                organization=personal_org,
+                email=user.email,
+                role=OrganizationMember.OWNER,
+                invitation_accepted=True,
+            )
+
+            # Apply basic plan/subscription (same as normal registration)
+            basic_plan, _ = PlansAndFeature.objects.get_or_create(
+                name="Basic",
+                defaults={
+                    "allowed_no_of_projects": "1",
+                    "allowed_no_of_content": "5",
+                    "allowed_no_of_queries": "10",
+                    "price": "0",
+                    "sub_text": "Basic Plan"
+                }
+            )
+            profile.update_subscription(basic_plan)
+
+            # Validate invitation token and link user to invited organization
             org_member, error, error_status = self.validate_invitation_token(invitation_token_id, user.email)
             if error:
                 return Response(error, status=error_status)
-            
-            # Create profile linked to invited organization
-            profile = Profile.objects.create(
-                user=user,
-                organization=org_member.organization
-            )
-            
-            # Link profile to organization member
+
             org_member.user = profile
             org_member.invitation_accepted = True
             org_member.save()
@@ -464,7 +492,7 @@ class UserMeView(APIView):
             "email": request.user.email,
             "name": request.user.get_full_name(),
             "organization": {
-                "id": org.id,
+                "id": str(org.id),
                 "name": org.name
             },
             "profile": serializer.data

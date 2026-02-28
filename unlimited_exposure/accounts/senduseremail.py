@@ -65,7 +65,6 @@ def SendUserEmail(
 
         # =========================
         # ORGANIZATION INVITATION
-        # (kept for future use)
         # =========================
         elif email_type.startswith("organization_invitation:"):
             email_action = email_type.split(":")[1]
@@ -76,7 +75,13 @@ def SendUserEmail(
             organization_role = Extra_info.get("organization_role", "member")
 
             mail_subject = f"You're Invited to Join {organization_name}"
-            url_link = f"{frontend_url}/activate/?invitation_token={Invitation_token}&email={to_email}"
+            # New vs existing user invitation behavior
+            if email_action == "invite-existing":
+                # Existing user: dedicated route
+                url_link = f"{frontend_url}/activate/exist-user/{Invitation_token}"
+            else:
+                # Default: new user / generic invite
+                url_link = f"{frontend_url}/activate/?invitation_token={Invitation_token}&email={to_email}"
 
             message = render_to_string(
                 "org_invite.html",

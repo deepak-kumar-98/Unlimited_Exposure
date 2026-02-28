@@ -1,4 +1,5 @@
-from accounts.models import OrganizationMember
+from django.contrib.auth.models import User
+from accounts.models import Organization, OrganizationMember
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
@@ -47,11 +48,15 @@ class AddMemberToOrg(APIView):
                 invitee_email=new_member.email,
             )
 
+        # Determine if this email belongs to an existing user
+        is_existing_user = User.objects.filter(email__iexact=email).exists()
+
         # Send invitation email
         try:
+            email_type = "organization_invitation:invite-existing" if is_existing_user else "organization_invitation:invite"
             SendUserEmail(
                 to_email=new_member.email,
-                email_type="organization_invitation:invite",
+                email_type=email_type,
                 username=new_member.email.split('@')[0],
                 Invitation_token=str(invite_token.id),
                 Extra_info={
@@ -123,3 +128,177 @@ class AcceptInvitationAPI(APIView):
             'organization': org_member.organization.name,
             'role': org_member.role
         }, status=status.HTTP_200_OK)
+
+
+def _serialize_organization(org, role=None, membership=None):
+    """Build full org info dict with optional role and membership details."""
+    data = {
+        "id": str(org.id),
+        "name": org.name,
+        "created_at": org.created_at.isoformat() if org.created_at else None,
+        "updated_at": org.updated_at.isoformat() if org.updated_at else None,
+        "owner": None,
+    }
+    if org.owner:
+        data["owner"] = {
+            "id": org.owner.id,
+            "email": org.owner.user.email if org.owner.user else None,
+            "name": org.owner.user.get_full_name() if org.owner.user else None,
+        }
+    if role is not None:
+        data["role"] = role
+    if membership:
+        data["invitation_accepted"] = membership.invitation_accepted
+        data["added_to_organization"] = membership.added_to_organization.isoformat() if membership.added_to_organization else None
+    return data
+
+
+class UserOrganizationsAPI(APIView):
+    """GET /organizations/ - Returns current org info and all orgs the user is a member of."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        profile = request.user.profile
+        current_org = profile.organization
+
+        # Current organization (full info)
+        membership = OrganizationMember.objects.filter(
+            organization=current_org, user=profile
+        ).first()
+        current_org_role = membership.role if membership else (
+            OrganizationMember.OWNER if current_org.owner_id == profile.id else None
+        )
+        if current_org.owner_id == profile.id and not current_org_role:
+            current_org_role = OrganizationMember.OWNER
+
+        organization = _serialize_organization(
+            current_org, role=current_org_role, membership=membership
+        )
+
+        # All organizations user is a member of
+        all_organizations = []
+        seen_org_ids = set()
+
+        for m in OrganizationMember.objects.filter(user=profile).select_related("organization"):
+            org_id = str(m.organization_id)
+            if org_id not in seen_org_ids:
+                seen_org_ids.add(org_id)
+                all_organizations.append(_serialize_organization(m.organization, role=m.role, membership=m))
+
+        for org in Organization.objects.filter(owner=profile):
+            org_id = str(org.id)
+            if org_id not in seen_org_ids:
+                seen_org_ids.add(org_id)
+                all_organizations.append(_serialize_organization(org, role=OrganizationMember.OWNER))
+
+        return Response({
+            "organization": organization,
+            "all_organizations": all_organizations,
+        })
+
+
+class OrganizationMembersAPI(APIView):
+    """
+    GET /auth/organization/members/ - List all members of the current user's organization.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        profile = request.user.profile
+        organization = profile.organization
+
+        members_qs = OrganizationMember.objects.filter(
+            organization=organization
+        ).select_related("user__user")
+
+        members = []
+        for member in members_qs:
+            user_profile = member.user  # Profile or None
+            user_obj = user_profile.user if user_profile else None
+
+            members.append({
+                "id": member.id,
+                "email": member.email,
+                "role": member.role,
+                "invitation_accepted": member.invitation_accepted,
+                "added_to_organization": member.added_to_organization.isoformat() if member.added_to_organization else None,
+                "created_at": member.created_at.isoformat() if member.created_at else None,
+                "updated_at": member.updated_at.isoformat() if member.updated_at else None,
+                "user": {
+                    "id": user_obj.id if user_obj else None,
+                    "name": user_obj.get_full_name() if user_obj else None,
+                    "email": user_obj.email if user_obj else None,
+                } if user_obj else None,
+            })
+
+        owner_profile = organization.owner
+        owner_user = owner_profile.user if owner_profile else None
+
+        return Response({
+            "organization": {
+                "id": str(organization.id),
+                "name": organization.name,
+                "owner": {
+                    "id": owner_user.id if owner_user else None,
+                    "name": owner_user.get_full_name() if owner_user else None,
+                    "email": owner_user.email if owner_user else None,
+                } if owner_user else None,
+            },
+            "members": members,
+        })
+
+
+class OrganizationMemberDeleteAPI(APIView):
+    """
+    DELETE /auth/organization/members/<int:member_id>/ - Revoke a member's access.
+
+    Rules:
+    - Only an OWNER of the organization can delete members.
+    - OWNER members cannot be deleted.
+    - You can only delete members from your own organization.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def delete(self, request, member_id):
+        profile = request.user.profile
+        organization = profile.organization
+
+        # Check that requester is an owner of this organization
+        is_owner = (
+            organization.owner_id == profile.id
+            or OrganizationMember.objects.filter(
+                organization=organization,
+                user=profile,
+                role=OrganizationMember.OWNER,
+                invitation_accepted=True,
+            ).exists()
+        )
+
+        if not is_owner:
+            return Response(
+                {"error": "Only organization owners can revoke member access"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        # Find the member in this organization
+        try:
+            member = OrganizationMember.objects.get(id=member_id, organization=organization)
+        except OrganizationMember.DoesNotExist:
+            return Response(
+                {"error": "Member not found in your organization"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        # Never allow deleting owners
+        if member.role == OrganizationMember.OWNER:
+            return Response(
+                {"error": "Owner cannot be removed from the organization"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        member.delete()
+
+        return Response(
+            {"message": "Member access revoked successfully"},
+            status=status.HTTP_200_OK,
+        )
