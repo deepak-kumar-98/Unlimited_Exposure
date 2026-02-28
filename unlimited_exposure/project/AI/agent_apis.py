@@ -128,9 +128,46 @@ class AgentAPI(APIView):
         try:
             user_profile = request.user.profile
             organization = Organization.objects.get(owner=user_profile)
-            agents = Agent.objects.filter(organization=organization)
+            queryset = Agent.objects.filter(organization=organization)
+            total_count = queryset.count()
+
+            # Parse limit / offset
+            try:
+                limit = int(request.query_params.get('limit', 10))
+                offset = int(request.query_params.get('offset', 0))
+                if limit < 1 or offset < 0:
+                    raise ValueError
+            except (ValueError, TypeError):
+                return Response(
+                    {"error": "limit must be a positive integer and offset must be >= 0"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            agents = queryset[offset: offset + limit]
             serializer = AgentSerializer(agents, many=True)
-            return Response(serializer.data, status=status.HTTP_200_OK)
+
+            # Build next / previous URLs
+            base_url = request.build_absolute_uri(request.path)
+
+            next_offset = offset + limit
+            next_url = (
+                f"{base_url}?limit={limit}&offset={next_offset}"
+                if next_offset < total_count else None
+            )
+
+            prev_offset = offset - limit
+            previous_url = (
+                f"{base_url}?limit={limit}&offset={max(prev_offset, 0)}"
+                if offset > 0 else None
+            )
+
+            return Response({
+                "count": total_count,
+                "next": next_url,
+                "previous": previous_url,
+                "results": serializer.data,
+            }, status=status.HTTP_200_OK)
+
         except Profile.DoesNotExist:
             return Response(
                 {"error": "Profile not found"},
