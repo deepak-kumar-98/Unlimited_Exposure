@@ -2,7 +2,7 @@ import os
 from django.core.files.storage import default_storage
 from rest_framework.views import APIView
 from project.models import Agent, IngestedContent
-from accounts.models import Organization, Profile
+from accounts.models import Organization, Profile, OrganizationMember
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -20,7 +20,17 @@ class AgentAPI(APIView):
     def post(self, request):
         name = request.data.get("name")
         try:
+            org_id = request.query_params.get("org_id") or request.data.get("org_id")
             user_profile = request.user.profile
+
+            if not org_id:
+                return Response({"error": "org_id is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+            member = OrganizationMember.objects.filter(organization=org_id, user=user_profile, role__in=[OrganizationMember.OWNER, OrganizationMember.ADMIN]).first()
+
+            if not member:
+                return Response({"error": "You do not have permission to perform this action"}, status=status.HTTP_403_FORBIDDEN)
+
             organization = Organization.objects.get(owner=user_profile)
 
             if Agent.objects.filter(organization=organization, name=name).exists():
