@@ -31,6 +31,12 @@ class AgentAPI(APIView):
             if not member:
                 return Response({"error": "You do not have permission to perform this action"}, status=status.HTTP_403_FORBIDDEN)
 
+            if not user_profile.subscription:
+                return Response(
+                    {"error": "Please purchase any plan"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
             organization = Organization.objects.get(owner=user_profile)
 
             if Agent.objects.filter(organization=organization, name=name).exists():

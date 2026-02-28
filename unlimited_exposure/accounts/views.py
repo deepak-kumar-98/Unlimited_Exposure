@@ -287,18 +287,7 @@ class VerifyAccount(APIView):
                 invitation_accepted=True,
             )
 
-            # Apply basic plan/subscription (same as normal registration)
-            basic_plan, _ = PlansAndFeature.objects.get_or_create(
-                name="Basic",
-                defaults={
-                    "allowed_no_of_projects": "1",
-                    "allowed_no_of_content": "5",
-                    "allowed_no_of_queries": "10",
-                    "price": "0",
-                    "sub_text": "Basic Plan"
-                }
-            )
-            profile.update_subscription(basic_plan)
+
 
             # Validate invitation token and link user to invited organization
             org_member, error, error_status = self.validate_invitation_token(invitation_token_id, user.email)
@@ -349,17 +338,7 @@ class VerifyAccount(APIView):
                 invitation_accepted=True,
             )
 
-            basic_plan, _ = PlansAndFeature.objects.get_or_create(
-                name="Basic",
-                defaults={
-                    "allowed_no_of_projects": "1",
-                    "allowed_no_of_content": "5",
-                    "allowed_no_of_queries": "10",
-                    "price": "0",
-                    "sub_text": "Basic Plan"
-                }
-            )
-            profile.update_subscription(basic_plan)
+
             
             return Response(
                 {"message": MESSAGES.get("success.email-verified")},
