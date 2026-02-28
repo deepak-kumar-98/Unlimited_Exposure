@@ -3,7 +3,7 @@ import re
 from rest_framework import serializers
 from django.contrib.auth.models import User
 
-from accounts.models import Profile, OrganizationMember, Organization
+from accounts.models import Profile, OrganizationMember, Organization, PlansAndFeature, Transaction
 from accounts.messages import get_response_messages
 
 MESSAGES = get_response_messages()
@@ -17,6 +17,20 @@ def split_name(full_name):
     last_name = ' '.join(name_parts[1:])
 
     return first_name, last_name
+
+class PlansAndFeatureSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PlansAndFeature
+        fields = '__all__'
+
+
+class TransactionSerializer(serializers.ModelSerializer):
+    plan_details = PlansAndFeatureSerializer(source='plan', read_only=True)
+
+    class Meta:
+        model = Transaction
+        fields = '__all__'
+
 
 class UserSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True)
@@ -71,9 +85,16 @@ class UserSerializer(serializers.ModelSerializer):
 
 
 class ProfileSerializer(serializers.ModelSerializer):
+    subscription_details = PlansAndFeatureSerializer(source='subscription', read_only=True)
+
     class Meta:
         model = Profile
-        fields = '__all__'
+        fields = [
+            'id', 'address', 'billing_address', 'profile_image_url', 
+            'no_of_queries', 'no_of_content', 'no_of_projects',
+            'plan_expiry_at', 'plan_created_at', 'is_plan_expired',
+            'subscription', 'subscription_details'
+        ]
 
 
 class LoginSerializer(serializers.Serializer):

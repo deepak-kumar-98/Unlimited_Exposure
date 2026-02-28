@@ -36,7 +36,7 @@ SECRET_KEY = "django-insecure-ki#(#(p5iuld@7-in_po5%@dh)j5crka7e_)&*k!&fel_i35rk
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ["212.64.211.27", "pannel.aiagentfactory.ca"]
+ALLOWED_HOSTS = ["localhost", "127.0.0.1", "212.64.211.27", "pannel.aiagentfactory.ca"]
 
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",

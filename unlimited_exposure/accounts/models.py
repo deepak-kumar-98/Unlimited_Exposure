@@ -81,6 +81,28 @@ class Profile(models.Model):
     def __str__(self):
         return self.user.email
 
+    def update_subscription(self, plan, billing_address=None):
+        """
+        Updates the profile's subscription, associated limits, and expiry date.
+        """
+        self.subscription = plan
+        if billing_address:
+            self.billing_address = billing_address
+            
+        # Set expiry date to 30 days from now by default
+        self.plan_expiry_at = timezone.now() + timezone.timedelta(days=30)
+        self.plan_created_at = timezone.now()
+        self.is_plan_expired = False
+        
+        try:
+            self.no_of_projects = int(plan.allowed_no_of_projects)
+            self.no_of_content = int(plan.allowed_no_of_content)
+            self.no_of_queries = int(plan.allowed_no_of_queries)
+        except (ValueError, TypeError):
+            # Fallback or log error if conversion fails
+            pass
+        self.save()
+
     
 
 
@@ -134,3 +156,30 @@ class OrganizationMember(models.Model):
 
     def __str__(self):
         return str(self.id)
+
+
+class Transaction(models.Model):
+    PENDING = 'pending'
+    COMPLETED = 'completed'
+    FAILED = 'failed'
+    CANCELLED = 'cancelled'
+
+    STATUS_CHOICES = [
+        (PENDING, 'Pending'),
+        (COMPLETED, 'Completed'),
+        (FAILED, 'Failed'),
+        (CANCELLED, 'Cancelled'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    profile = models.ForeignKey(Profile, on_delete=models.CASCADE, related_name='transactions')
+    plan = models.ForeignKey(PlansAndFeature, on_delete=models.SET_NULL, null=True, blank=True)
+    paypal_order_id = models.CharField(max_length=255, unique=True)
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    currency = models.CharField(max_length=10, default='USD')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=PENDING)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Transaction {self.paypal_order_id} - {self.status}"
