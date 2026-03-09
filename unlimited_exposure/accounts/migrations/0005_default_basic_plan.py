@@ -11,7 +11,7 @@ def create_default_basic_plan(apps, schema_editor):
             "allowed_no_of_projects": "1",
             "allowed_no_of_content": "5",
             "allowed_no_of_queries": "10",
-            "price": "0",
+            "price": "10",
             "sub_text": "Basic Plan"
         }
     )
