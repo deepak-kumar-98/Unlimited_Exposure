@@ -16,7 +16,19 @@ def create_default_basic_plan(apps, schema_editor):
         }
     )
 
-    # 2. Update all profiles that don't have a subscription
+    # 2. Ensure "Premium" plan exists
+    premium_plan, created = PlansAndFeature.objects.get_or_create(
+        name="Premium",
+        defaults={
+            "allowed_no_of_projects": "20",
+            "allowed_no_of_content": "50",
+            "allowed_no_of_queries": "1000",
+            "price": "30",
+            "sub_text": "Premium Plan"
+        }
+    )
+
+    # 3. Update all profiles that don't have a subscription
     from django.utils import timezone
     profiles_to_update = Profile.objects.filter(subscription__isnull=True)
     for profile in profiles_to_update:
