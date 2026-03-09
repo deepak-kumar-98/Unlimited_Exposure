@@ -5,6 +5,13 @@ from accounts.views import (
     CreatePayPalOrderView, CapturePayPalOrderView, CancelPayPalOrderView,
     BillingHistoryView
 )
+from accounts.apis.organization import (
+    AddMemberToOrg,
+    AcceptInvitationAPI,
+    UserOrganizationsAPI,
+    OrganizationMembersAPI,
+    OrganizationMemberDeleteAPI,
+)
 from rest_framework_simplejwt.views import TokenRefreshView
 
 urlpatterns = [
@@ -13,10 +20,15 @@ urlpatterns = [
     path('login/', LoginView.as_view(), name='login'),
     path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('me/', UserMeView.as_view(), name='user_me'),
+    path('organizations/', UserOrganizationsAPI.as_view(), name='user_organizations'),
     path('forgot-password/', ForgotPasswordView.as_view(), name='forgot_password'),
     path('reset-password/<str:uidb64>/<str:token>/', ResetPasswordView.as_view(), name='reset_password'),
     path('paypal/create-order/', CreatePayPalOrderView.as_view(), name='paypal_create_order'),
     path('paypal/capture-order/', CapturePayPalOrderView.as_view(), name='paypal_capture_order'),
     path('paypal/cancel-order/', CancelPayPalOrderView.as_view(), name='paypal_cancel_order'),
     path('billing-history/', BillingHistoryView.as_view(), name='billing_history'),
+    path('organization/invite-member/<str:org_id>/', AddMemberToOrg.as_view(), name='invite_member'),
+    path('organization/accept-invitation/', AcceptInvitationAPI.as_view(), name='accept_invitation'),
+    path('organization/members/', OrganizationMembersAPI.as_view(), name='organization_members'),
+    path('organization/members/<int:member_id>/', OrganizationMemberDeleteAPI.as_view(), name='organization_member_delete'),
 ]

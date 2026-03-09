@@ -2,7 +2,7 @@ import uuid
 from django.db import models
 from django.utils import timezone
 from django.contrib.auth.models import User
-
+from datetime import timedelta
 
 
 class PlansAndFeature(models.Model):
@@ -183,3 +183,20 @@ class Transaction(models.Model):
 
     def __str__(self):
         return f"Transaction {self.paypal_order_id} - {self.status}"
+
+
+class InvitationToken(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    inviter = models.ForeignKey(User, related_name='issued_invitations', on_delete=models.CASCADE)
+    organization_member_id = models.IntegerField(null=True)
+    project_member_id = models.IntegerField(null=True)
+    invitee_email = models.EmailField(null=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def is_expired(self):
+        expiry_date = self.created_at + timedelta(days=15)
+        return timezone.now() > expiry_date
+
+    def __str__(self):
+        return f'From {self.inviter} to {self.invitee_email}'
+

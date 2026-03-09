@@ -31,6 +31,12 @@ class AgentAPI(APIView):
             if not member:
                 return Response({"error": "You do not have permission to perform this action"}, status=status.HTTP_403_FORBIDDEN)
 
+            if not user_profile.subscription:
+                return Response(
+                    {"error": "Please purchase any plan"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
             organization = Organization.objects.get(owner=user_profile)
 
             if Agent.objects.filter(organization=organization, name=name).exists():
@@ -127,7 +133,34 @@ class AgentAPI(APIView):
     def get(self, request):
         try:
             user_profile = request.user.profile
-            organization = Organization.objects.get(owner=user_profile)
+
+            # Read org_id from query params
+            org_id = request.query_params.get("org_id")
+            if not org_id:
+                return Response(
+                    {"error": "org_id is required"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            # Ensure the user belongs to this organization (any role)
+            member = OrganizationMember.objects.filter(
+                organization=org_id,
+                user=user_profile,
+            ).first()
+            if not member:
+                return Response(
+                    {"error": "You do not have permission to access this organization's agents"},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+
+            try:
+                organization = Organization.objects.get(id=org_id)
+            except Organization.DoesNotExist:
+                return Response(
+                    {"error": "Organization not found"},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+
             queryset = Agent.objects.filter(organization=organization)
             total_count = queryset.count()
 
@@ -146,18 +179,18 @@ class AgentAPI(APIView):
             agents = queryset[offset: offset + limit]
             serializer = AgentSerializer(agents, many=True)
 
-            # Build next / previous URLs
+            # Build next / previous URLs (preserve org_id)
             base_url = request.build_absolute_uri(request.path)
 
             next_offset = offset + limit
             next_url = (
-                f"{base_url}?limit={limit}&offset={next_offset}"
+                f"{base_url}?org_id={org_id}&limit={limit}&offset={next_offset}"
                 if next_offset < total_count else None
             )
 
             prev_offset = offset - limit
             previous_url = (
-                f"{base_url}?limit={limit}&offset={max(prev_offset, 0)}"
+                f"{base_url}?org_id={org_id}&limit={limit}&offset={max(prev_offset, 0)}"
                 if offset > 0 else None
             )
 
