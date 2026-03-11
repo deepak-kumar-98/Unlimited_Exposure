@@ -539,31 +539,6 @@ class CreatePayPalOrderView(APIView):
         except (PlansAndFeature.DoesNotExist, ValueError):
             return Response({"error": "Invalid plan_id"}, status=status.HTTP_400_BAD_REQUEST)
 
-        try:
-            price = float(plan.price)
-        except (ValueError, TypeError):
-            price = 0.0
-
-        if price <= 0:
-            # Handle free plan seamlessly
-            request.user.profile.update_subscription(plan)
-            
-            # Create COMPLETED transaction record
-            order_id = f"FREE-{uuid.uuid4().hex[:8].upper()}"
-            Transaction.objects.create(
-                profile=request.user.profile,
-                plan=plan,
-                paypal_order_id=order_id,
-                amount=plan.price,
-                status=Transaction.COMPLETED
-            )
-            # Simulated PayPal capture response structure for frontend compatibility
-            return Response({
-                "id": order_id,
-                "status": "COMPLETED",
-                "message": "Subscription updated to free plan successfully"
-            }, status=status.HTTP_200_OK)
-
         paypal_service = PayPalService()
         order = paypal_service.create_order(amount=plan.price, currency="USD")
         
