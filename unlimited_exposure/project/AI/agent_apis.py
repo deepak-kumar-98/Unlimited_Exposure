@@ -208,6 +208,8 @@ class AgentAPI(APIView):
             )
         except Organization.DoesNotExist:
             return Response({"error": "Organization not found"}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({"error": "An unexpected error occurred while fetching agents.", "details": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class AgentDetailAPI(APIView):
@@ -260,6 +262,8 @@ class AgentDetailAPI(APIView):
             return Response(data, status=status.HTTP_200_OK)
         except NotFound as e:
              return Response({"error": str(e)}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+             return Response({"error": "An unexpected error occurred retrieving the agent.", "details": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     def patch(self, request, id):
         try:
@@ -271,6 +275,8 @@ class AgentDetailAPI(APIView):
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         except NotFound as e:
             return Response({"error": str(e)}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({"error": "An unexpected error occurred updating the agent.", "details": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
     def delete(self, request, id):

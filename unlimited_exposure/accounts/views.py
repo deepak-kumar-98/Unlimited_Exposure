@@ -65,12 +65,16 @@ class RegisterUser(APIView):
         else:
             token_url = f'?token={token.key}'
 
-        SendUserEmail(
-            to_email=user.email,
-            email_type='auth:account-activate',
-            token=token_url,
-            username=user.get_full_name(),
-        )
+        try:
+            SendUserEmail(
+                to_email=user.email,
+                email_type='auth:account-activate',
+                token=token_url,
+                username=user.get_full_name(),
+            )
+        except Exception as e:
+            # Non-blocking error logging
+            print(f"Failed to send verification email: {e}")
 
         return Response(
             {'message': MESSAGES.get('success.account-created', 'Account created successfully')},
@@ -493,12 +497,15 @@ class ForgotPasswordView(APIView):
             uid = urlsafe_base64_encode(force_bytes(user.pk))
             
             # Send email
-            SendUserEmail(
-                to_email=user.email,
-                email_type='auth:Forgot',
-                token=f"{uid}/{token}",
-                username=user.get_full_name()
-            )
+            try:
+                SendUserEmail(
+                    to_email=user.email,
+                    email_type='auth:Forgot',
+                    token=f"{uid}/{token}",
+                    username=user.get_full_name()
+                )
+            except Exception as e:
+                print(f"Failed to send reset email: {e}")
 
         # Always return success to prevent email enumeration
         return Response(
