@@ -59,9 +59,13 @@ class AgentAPI(APIView):
                     full_path = default_storage.path(file_path)
                     ext = os.path.splitext(file.name)[1].lower()
                     
-                    # Use process_pdf for PDFs, extract_text_from_file + process_text for others
+                    # Route to appropriate processor based on file extension
                     if ext == '.pdf':
                         result = processor.process_pdf(full_path)
+                    elif ext == '.csv':
+                        result = processor.process_csv(full_path)
+                    elif ext in ['.xlsx', '.xls']:
+                        result = processor.process_xlsx(full_path)
                     else:
                         extracted_text = extract_text_from_file(full_path)
                         if not extracted_text.strip():
@@ -93,7 +97,7 @@ class AgentAPI(APIView):
                         url = 'https://' + url
                     
                     try:
-                        scraped_text = scrape_website_content(url)
+                        scraped_text = scrape_website_content(url, is_sitemap=False)
                         if not scraped_text.strip():
                             print(f"Warning: No content scraped from {url}")
                             continue
@@ -115,8 +119,36 @@ class AgentAPI(APIView):
                         print(f"Error scraping URL {url}: {str(e)}")
                         continue
             
+            # Handle sitemap scraping if present
+            sitemap = request.data.get('sitemap')
+            if sitemap and sitemap.strip():
+                # Validate sitemap URL format
+                if not sitemap.startswith(('http://', 'https://')):
+                    sitemap = 'https://' + sitemap
+                
+                try:
+                    scraped_text = scrape_website_content(sitemap, is_sitemap=True)
+                    if not scraped_text.strip():
+                        print(f"Warning: No content scraped from sitemap {sitemap}")
+                    else:
+                        result = processor.process_text(scraped_text, source=sitemap)
+                        
+                        if result["status"] == "success":
+                            IngestedContent.objects.create(
+                                agent=agent,
+                                uploaded_by=user_profile,
+                                organization=organization,
+                                file_name=f"Sitemap: {sitemap}",
+                                content_type=IngestedContent.URL,
+                                data_url=sitemap,
+                                chunk_count=result["chunks"],
+                                ingestion_status="completed"
+                            )
+                except Exception as e:
+                    print(f"Error scraping sitemap {sitemap}: {str(e)}")
+            
             return Response({
-                        "message": "Agent created and URL content processed successfully",
+                        "message": "Agent created and content processed successfully",
                         "agent_id": agent.id
                     }, status=status.HTTP_201_CREATED)
 

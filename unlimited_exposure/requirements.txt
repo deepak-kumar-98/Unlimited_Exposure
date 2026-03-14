@@ -58,3 +58,5 @@ langchain_community
 langchain_openai
 pgvector
 gunicorn
+unstructured
+unstructured[xlsx]

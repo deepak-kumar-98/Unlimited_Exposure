@@ -79,11 +79,12 @@ class IngestRequestSerializer(serializers.Serializer):
         child=serializers.URLField(),
         required=False
     )
+    sitemap = serializers.URLField(required=False)
 
     def validate(self, data):
-        if not data.get("files") and not data.get("urls"):
+        if not data.get("files") and not data.get("urls") and not data.get("sitemap"):
             raise serializers.ValidationError(
-                "Provide at least one file or one URL."
+                "Provide at least one file, URL, or sitemap."
             )
         return data
 

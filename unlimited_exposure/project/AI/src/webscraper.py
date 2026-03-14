@@ -36,18 +36,36 @@ class WebScraper:
             
         self.app = Firecrawl(api_key=settings.FIRECRAWL_API_KEY)
 
-    def scrape_page(self, url: str):
-        print(f"🔥 Firecrawling site: {url} ...")
+    def scrape_page(self, url: str, is_sitemap: bool = False):
+        print(f"🔥 Firecrawling site: {url} {'(SITEMAP MODE)' if is_sitemap else '(LIMITED MODE)'} ...")
         
         try:
             # 1. SEND REQUEST
             print("   ... Request sent, waiting for Firecrawl job to complete (this might take 10-20s) ...")
-            crawl_status = self.app.crawl(
-                url, 
-                limit=5, # Reduced limit to 5 for faster debugging
-                scrape_options={'formats': ['markdown']},
-                poll_interval=2
-            )
+            
+            # Set parameters based on whether it's a sitemap or regular URL
+            crawl_params = {
+                'scrape_options': {'formats': ['markdown']},
+                'poll_interval': 5
+            }
+            
+            if is_sitemap:
+                # For sitemaps, extract base URL and use sitemap="only"
+                # Example: https://www.flitpay.com/sitemap.xml -> https://www.flitpay.com
+                from urllib.parse import urlparse
+                parsed = urlparse(url)
+                base_url = f"{parsed.scheme}://{parsed.netloc}"
+                
+                crawl_params['sitemap'] = 'only'
+                print(f"   ... Crawling URLs from sitemap at {base_url} ...")
+                
+                # Use base URL for crawling, not the sitemap.xml URL
+                crawl_status = self.app.crawl(base_url, **crawl_params)
+            else:
+                # For regular URLs, limit to 5 pages
+                crawl_params['limit'] = 5
+                print("   ... Crawling with limit of 5 pages ...")
+                crawl_status = self.app.crawl(url, **crawl_params)
             
             # 2. DEBUG PRINT RAW RESPONSE
             print("   ... Job returned! Analyzing response ...")
