@@ -1,7 +1,7 @@
 # apps/content/serializers.py
 
 from rest_framework import serializers
-from .models import IngestedContent, Agent
+from .models import IngestedContent, Agent, AgentSettings
 from .models import ChatSession, ChatMessage, SystemSettings
 
 class AgentSerializer(serializers.ModelSerializer):
@@ -157,3 +157,19 @@ class PreviewSystemPromptSerializer(serializers.Serializer):
         default=list,
         help_text="Optional list of personas (max 2 handled in view)"
     )
+
+
+class AgentSettingsSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AgentSettings
+        fields = [
+            "id",
+            "theme_color",
+            "is_embedded",
+            "chatbot_dimension",
+            "text_colour",
+            "header_color",
+            "header_text_color",
+            "collecting_leads"
+        ]
+        read_only_fields = ["id"]

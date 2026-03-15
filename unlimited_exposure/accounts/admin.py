@@ -1,3 +1,9 @@
 from django.contrib import admin
+from .models import PlansAndFeature, Profile, Organization, OrganizationMember, Transaction, InvitationToken
 
-# Register your models here.
+admin.site.register(PlansAndFeature)
+admin.site.register(Profile)
+admin.site.register(Organization)
+admin.site.register(OrganizationMember)
+admin.site.register(Transaction)
+admin.site.register(InvitationToken)
