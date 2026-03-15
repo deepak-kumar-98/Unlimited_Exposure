@@ -1,6 +1,5 @@
 from django.contrib.auth.models import User
 from rest_framework.views import APIView
-import uuid
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.authtoken.models import Token
@@ -45,7 +44,8 @@ class RegisterUser(APIView):
             )
 
         email = serializer.validated_data['email'].lower()
-        invitation_token = request.data.get('invitation_token')  # Get invitation token from request
+        phone_number = serializer.validated_data.get('phone_number')
+        invitation_token = request.data.get('invitation_token')
 
         if User.objects.filter(email=email).exists():
             return Response(
@@ -57,9 +57,34 @@ class RegisterUser(APIView):
         user.is_active = False
         user.save()
 
+        # Create organization immediately
+        organization = Organization.objects.create(
+            name=f"{user.first_name or user.email}'s Organization"
+        )
+
+        # Create profile with phone_number immediately
+        profile = Profile.objects.create(
+            user=user,
+            organization=organization,
+            phone_number=phone_number
+        )
+
+        # Set organization owner
+        organization.owner = profile
+        organization.save(update_fields=["owner"])
+
+        # Create organization member
+        OrganizationMember.objects.create(
+            user=profile,
+            organization=organization,
+            email=user.email,
+            role=OrganizationMember.OWNER,
+            invitation_accepted=True,
+        )
+
         token, _ = Token.objects.get_or_create(user=user)
 
-        # Build token URL with invitation token if provided
+        # Build token URL
         if invitation_token:
             token_url = f'?token={token.key}&invitation_token={invitation_token}'
         else:
@@ -73,7 +98,6 @@ class RegisterUser(APIView):
                 username=user.get_full_name(),
             )
         except Exception as e:
-            # Non-blocking error logging
             print(f"Failed to send verification email: {e}")
 
         return Response(
@@ -261,45 +285,20 @@ class VerifyAccount(APIView):
 
         # Case 1: Both tokens provided (New user with invitation)
         if token_key and invitation_token_id:
-            # Validate activation token
             user, error, error_status = self.validate_activation_token(token_key)
             if error:
                 return Response(error, status=error_status)
             
-            # Activate user
+            # Just activate user - profile already exists
             user.is_active = True
             user.save()
-            
-            # Create user's own primary organization (same as normal registration)
-            personal_org = Organization.objects.create(
-                name=f"{user.first_name or user.email}'s Organization"
-            )
 
-            profile = Profile.objects.create(
-                user=user,
-                organization=personal_org
-            )
-
-            personal_org.owner = profile
-            personal_org.save(update_fields=["owner"])
-
-            # Make user OWNER of their own organization
-            OrganizationMember.objects.create(
-                user=profile,
-                organization=personal_org,
-                email=user.email,
-                role=OrganizationMember.OWNER,
-                invitation_accepted=True,
-            )
-
-
-
-            # Validate invitation token and link user to invited organization
+            # Link user to invited organization
             org_member, error, error_status = self.validate_invitation_token(invitation_token_id, user.email)
             if error:
                 return Response(error, status=error_status)
 
-            org_member.user = profile
+            org_member.user = user.profile
             org_member.invitation_accepted = True
             org_member.save()
             
@@ -310,40 +309,13 @@ class VerifyAccount(APIView):
         
         # Case 2: Only activation token (Normal registration)
         elif token_key:
-            # Validate activation token
             user, error, error_status = self.validate_activation_token(token_key)
             if error:
                 return Response(error, status=error_status)
             
-            # Activate user
+            # Just activate user - profile already exists
             user.is_active = True
             user.save()
-            
-            # Create new organization
-            organization = Organization.objects.create(
-                name=f"{user.first_name or user.email}'s Organization"
-            )
-            
-            # Create profile linked to organization
-            profile = Profile.objects.create(
-                user=user,
-                organization=organization
-            )
-            
-            # Assign owner
-            organization.owner = profile
-            organization.save(update_fields=["owner"])
-            
-            # Assign OWNER role
-            OrganizationMember.objects.create(
-                user=profile,
-                organization=organization,
-                email=user.email,
-                role=OrganizationMember.OWNER,
-                invitation_accepted=True,
-            )
-
-
             
             return Response(
                 {"message": MESSAGES.get("success.email-verified")},
