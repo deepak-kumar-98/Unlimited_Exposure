@@ -1,14 +1,14 @@
 import os
 from django.core.files.storage import default_storage
 from rest_framework.views import APIView
-from project.models import Agent, IngestedContent
+from project.models import Agent, IngestedContent, AgentSettings
 from accounts.models import Organization, Profile, OrganizationMember
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.exceptions import NotFound
-from project.serializers import AgentSerializer
+from project.serializers import AgentSerializer, AgentSettingsSerializer
 from .src.document_processor import DocumentProcessor
 from .src.api_services import extract_text_from_file, scrape_website_content
 
@@ -46,6 +46,19 @@ class AgentAPI(APIView):
                 )
 
             agent = Agent.objects.create(name=name, organization=organization, created_by=user_profile)
+            
+            # Create default agent settings
+            AgentSettings.objects.create(
+                agent=agent,
+                theme_color=request.data.get('theme_color'),
+                is_embedded=request.data.get('is_embedded', False),
+                chatbot_dimension=request.data.get('chatbot_dimension'),
+                text_colour=request.data.get('text_colour', '#00000099'),
+                header_color=request.data.get('header_color', '#070706'),
+                header_text_color=request.data.get('header_text_color', 'white'),
+                collecting_leads=request.data.get('collecting_leads', False)
+            )
+            
             processor = DocumentProcessor(agent_id=str(agent.id))
 
             # Handle file upload if present
@@ -59,9 +72,13 @@ class AgentAPI(APIView):
                     full_path = default_storage.path(file_path)
                     ext = os.path.splitext(file.name)[1].lower()
                     
-                    # Use process_pdf for PDFs, extract_text_from_file + process_text for others
+                    # Route to appropriate processor based on file extension
                     if ext == '.pdf':
                         result = processor.process_pdf(full_path)
+                    elif ext == '.csv':
+                        result = processor.process_csv(full_path)
+                    elif ext in ['.xlsx', '.xls']:
+                        result = processor.process_xlsx(full_path)
                     else:
                         extracted_text = extract_text_from_file(full_path)
                         if not extracted_text.strip():
@@ -93,7 +110,7 @@ class AgentAPI(APIView):
                         url = 'https://' + url
                     
                     try:
-                        scraped_text = scrape_website_content(url)
+                        scraped_text = scrape_website_content(url, is_sitemap=False)
                         if not scraped_text.strip():
                             print(f"Warning: No content scraped from {url}")
                             continue
@@ -115,8 +132,36 @@ class AgentAPI(APIView):
                         print(f"Error scraping URL {url}: {str(e)}")
                         continue
             
+            # Handle sitemap scraping if present
+            sitemap = request.data.get('sitemap')
+            if sitemap and sitemap.strip():
+                # Validate sitemap URL format
+                if not sitemap.startswith(('http://', 'https://')):
+                    sitemap = 'https://' + sitemap
+                
+                try:
+                    scraped_text = scrape_website_content(sitemap, is_sitemap=True)
+                    if not scraped_text.strip():
+                        print(f"Warning: No content scraped from sitemap {sitemap}")
+                    else:
+                        result = processor.process_text(scraped_text, source=sitemap)
+                        
+                        if result["status"] == "success":
+                            IngestedContent.objects.create(
+                                agent=agent,
+                                uploaded_by=user_profile,
+                                organization=organization,
+                                file_name=f"Sitemap: {sitemap}",
+                                content_type=IngestedContent.URL,
+                                data_url=sitemap,
+                                chunk_count=result["chunks"],
+                                ingestion_status="completed"
+                            )
+                except Exception as e:
+                    print(f"Error scraping sitemap {sitemap}: {str(e)}")
+            
             return Response({
-                        "message": "Agent created and URL content processed successfully",
+                        "message": "Agent created and content processed successfully",
                         "agent_id": agent.id
                     }, status=status.HTTP_201_CREATED)
 
@@ -302,4 +347,109 @@ class AgentDetailAPI(APIView):
             return Response({"error": str(e)}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class AgentSettingsDetailAPI(APIView):
+
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get_agent(self, agent_id, user_profile):
+        """Verify agent exists and user has access"""
+        try:
+            agent = Agent.objects.get(id=agent_id)
+        except Agent.DoesNotExist:
+            return None, "not_found"
+        
+        member = OrganizationMember.objects.filter(
+            user=user_profile,
+            organization=agent.organization
+        ).first()
+        
+        if not member:
+            return None, "no_permission"
+        
+        return agent, None
+
+    def get(self, request, agent_id):
+        """Get agent settings by agent_id"""
+        try:
+            agent, error = self.get_agent(agent_id, request.user.profile)
+            
+            if error == "not_found":
+                return Response(
+                    {"error": "Agent not found"},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            
+            if error == "no_permission":
+                return Response(
+                    {"error": "You do not have permission to access this agent"},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            
+            try:
+                settings = AgentSettings.objects.get(agent=agent)
+                serializer = AgentSettingsSerializer(settings)
+                return Response(serializer.data, status=status.HTTP_200_OK)
+            except AgentSettings.DoesNotExist:
+                return Response(
+                    {"error": "Agent settings not found"},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+        except Exception as e:
+            return Response(
+                {"error": "An unexpected error occurred", "details": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    def patch(self, request, agent_id):
+        """Update agent settings by agent_id"""
+        try:
+            agent, error = self.get_agent(agent_id, request.user.profile)
+            
+            if error == "not_found":
+                return Response(
+                    {"error": "Agent not found"},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            
+            if error == "no_permission":
+                return Response(
+                    {"error": "You do not have permission to access this agent"},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            
+            # Check if user has admin/owner role
+            member = OrganizationMember.objects.filter(
+                user=request.user.profile,
+                organization=agent.organization,
+                role__in=[OrganizationMember.OWNER, OrganizationMember.ADMIN]
+            ).first()
+            
+            if not member:
+                return Response(
+                    {"error": "You do not have permission to update agent settings"},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            
+            try:
+                settings = AgentSettings.objects.get(agent=agent)
+            except AgentSettings.DoesNotExist:
+                return Response(
+                    {"error": "Agent settings not found"},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            
+            serializer = AgentSettingsSerializer(settings, data=request.data, partial=True)
+            if serializer.is_valid():
+                serializer.save()
+                return Response(serializer.data, status=status.HTTP_200_OK)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            
+        except Exception as e:
+            return Response(
+                {"error": "An unexpected error occurred", "details": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 

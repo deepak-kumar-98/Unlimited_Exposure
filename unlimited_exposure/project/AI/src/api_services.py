@@ -73,10 +73,10 @@ def chunk_text_content(text: str, chunk_size: int = 2000) -> List[str]:
     if not text: return []
     return [text[i:i+chunk_size] for i in range(0, len(text), chunk_size)]
 
-def scrape_website_content(url: str) -> str:
+def scrape_website_content(url: str, is_sitemap: bool = False) -> str:
     try:
         scraper = WebScraper()
-        return scraper.scrape_page(url)
+        return scraper.scrape_page(url, is_sitemap=is_sitemap)
     except Exception as e:
         print(f"Scraping failed: {e}")
         return ""

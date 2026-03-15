@@ -248,3 +248,21 @@ class SystemSettings(models.Model):
 
     def __str__(self):
         return f"SystemSettings ({self.organization.name})"
+
+
+class AgentSettings(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    agent = models.ForeignKey(
+        Agent,
+        on_delete=models.CASCADE,
+        related_name="settings"
+    )
+
+    theme_color = models.CharField(max_length=100, null=True)
+    is_embedded = models.BooleanField(default=False)
+    chatbot_dimension = models.JSONField(default=list, null=True)
+    text_colour = models.CharField(max_length=100, null=True, default='#00000099')
+    header_color = models.CharField(max_length=100, null=True, default="#070706")
+    header_text_color = models.CharField(max_length=100, null=True, default='white')
+    collecting_leads = models.BooleanField(default=False)

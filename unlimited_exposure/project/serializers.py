@@ -1,7 +1,7 @@
 # apps/content/serializers.py
 
 from rest_framework import serializers
-from .models import IngestedContent, Agent
+from .models import IngestedContent, Agent, AgentSettings
 from .models import ChatSession, ChatMessage, SystemSettings
 
 class AgentSerializer(serializers.ModelSerializer):
@@ -79,11 +79,12 @@ class IngestRequestSerializer(serializers.Serializer):
         child=serializers.URLField(),
         required=False
     )
+    sitemap = serializers.URLField(required=False)
 
     def validate(self, data):
-        if not data.get("files") and not data.get("urls"):
+        if not data.get("files") and not data.get("urls") and not data.get("sitemap"):
             raise serializers.ValidationError(
-                "Provide at least one file or one URL."
+                "Provide at least one file, URL, or sitemap."
             )
         return data
 
@@ -156,3 +157,19 @@ class PreviewSystemPromptSerializer(serializers.Serializer):
         default=list,
         help_text="Optional list of personas (max 2 handled in view)"
     )
+
+
+class AgentSettingsSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AgentSettings
+        fields = [
+            "id",
+            "theme_color",
+            "is_embedded",
+            "chatbot_dimension",
+            "text_colour",
+            "header_color",
+            "header_text_color",
+            "collecting_leads"
+        ]
+        read_only_fields = ["id"]

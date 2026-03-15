@@ -98,9 +98,13 @@ class IngestContentAPIView(APIView):
                 full_path = default_storage.path(path)
                 ext = os.path.splitext(file.name)[1].lower()
                 
-                # Use process_pdf for PDFs, extract_text_from_file + process_text for others
+                # Route to appropriate processor based on file extension
                 if ext == '.pdf':
                     result = processor.process_pdf(full_path)
+                elif ext == '.csv':
+                    result = processor.process_csv(full_path)
+                elif ext in ['.xlsx', '.xls']:
+                    result = processor.process_xlsx(full_path)
                 else:
                     extracted_text = extract_text_from_file(full_path)
                     if extracted_text.strip():
@@ -137,7 +141,7 @@ class IngestContentAPIView(APIView):
             if agent:
                 processor = DocumentProcessor(agent_id=str(agent.id))
                 
-                scraped_text = scrape_website_content(url)
+                scraped_text = scrape_website_content(url, is_sitemap=False)
                 if scraped_text.strip():
                     result = processor.process_text(scraped_text, source=url)
                 else:
@@ -149,6 +153,35 @@ class IngestContentAPIView(APIView):
             #         content_source=url,
             #         is_url=True
             #     )
+
+                content.chunk_count = result.get("chunks", 0)
+                content.ingestion_status = "completed" if result.get("status", "error") == "success" else result.get("status", "error")
+                content.save()
+
+                created.append(content)
+        
+        # ---------- SITEMAP INGESTION ----------
+        sitemap = serializer.validated_data.get("sitemap")
+        if sitemap:
+            content = IngestedContent.objects.create(
+                agent=agent,
+                uploaded_by=profile,
+                organization=organization,
+                file_name=f"Sitemap: {sitemap}",
+                data_url=sitemap,
+                content_type=IngestedContent.URL,
+                ingestion_status="processing"
+            )
+
+            # Use agent-based ingestion if agent is provided
+            if agent:
+                processor = DocumentProcessor(agent_id=str(agent.id))
+                
+                scraped_text = scrape_website_content(sitemap, is_sitemap=True)
+                if scraped_text.strip():
+                    result = processor.process_text(scraped_text, source=sitemap)
+                else:
+                    result = {"status": "failed", "chunks": 0}
 
                 content.chunk_count = result.get("chunks", 0)
                 content.ingestion_status = "completed" if result.get("status", "error") == "success" else result.get("status", "error")

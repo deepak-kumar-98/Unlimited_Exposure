@@ -36,6 +36,7 @@ class UserSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True)
     username = serializers.CharField(required=False)
     full_name = serializers.CharField(required=True)
+    phone_number = serializers.CharField(required=True)
     invitation_token = serializers.CharField(required=False)
 
     def validate_password(self, password):
@@ -90,7 +91,7 @@ class ProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = Profile
         fields = [
-            'id', 'address', 'billing_address', 'profile_image_url', 
+            'id', 'address', 'billing_address', 'profile_image_url', 'phone_number',
             'no_of_queries', 'no_of_content', 'no_of_projects',
             'plan_expiry_at', 'plan_created_at', 'is_plan_expired',
             'subscription', 'subscription_details'
